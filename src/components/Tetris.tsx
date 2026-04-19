@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import { App } from '@capacitor/app';
 import { 
   COLS, 
   ROWS, 
@@ -117,24 +118,46 @@ export default function Tetris() {
     const handleResize = () => {
       setCellSize(getDynamicCellSize());
     };
-    
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'hidden' && gameState === 'PLAYING' && !gameOver && !paused) {
-        setPaused(true);
-        setDropTime(null);
-        sounds.stopMusic();
-      }
-    };
 
     if (gameState === 'MENU') {
       sounds.startMenuMusic();
     }
 
     window.addEventListener('resize', handleResize);
-    document.addEventListener('visibilitychange', handleVisibilityChange);
     
     return () => {
       window.removeEventListener('resize', handleResize);
+    };
+  }, [gameState]);
+
+  // Handle app lifecycle (background/foreground) using both Capacitor native events and Web API
+  useEffect(() => {
+    const stopAppActivity = () => {
+      sounds.stopMusic();
+      if (gameState === 'PLAYING' && !gameOver && !paused) {
+        setPaused(true);
+        setDropTime(null);
+      }
+    };
+
+    // Capacitor listener for native app states
+    const subscription = App.addListener('appStateChange', ({ isActive }) => {
+      if (!isActive) {
+        stopAppActivity();
+      }
+    });
+
+    // Web standard listener for tab switching/minimizing in browsers
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden') {
+        stopAppActivity();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      subscription.then(unsub => unsub.remove());
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [gameState, gameOver, paused]);
