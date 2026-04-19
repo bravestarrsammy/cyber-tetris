@@ -162,6 +162,39 @@ export default function Tetris() {
     };
   }, [gameState, gameOver, paused]);
 
+  // Handle Android Back Button conventional behavior
+  useEffect(() => {
+    const handleBackButton = async () => {
+      if (showSettings) {
+        setShowSettings(false);
+      } else if (showConfirmMenu) {
+        setShowConfirmMenu(false);
+      } else if (gameState === 'PLAYING') {
+        if (gameOver) {
+          setGameState('MENU');
+          sounds.stopMusic();
+        } else if (!paused) {
+          // Auto pause on back button press
+          setPaused(true);
+          setDropTime(null);
+          sounds.stopMusic();
+        } else {
+          // Already paused, show exit confirmation
+          setShowConfirmMenu(true);
+        }
+      } else {
+        // Main menu and no overlays -> Exit App
+        App.exitApp();
+      }
+    };
+
+    const subscription = App.addListener('backButton', handleBackButton);
+
+    return () => {
+      subscription.then(unsub => unsub.remove());
+    };
+  }, [gameState, gameOver, paused, showSettings, showConfirmMenu]);
+
   const touchStartRef = useRef<{ x: number, y: number } | null>(null);
   const touchLastRef = useRef<{ x: number, y: number } | null>(null);
   const isMovingRef = useRef(false);
@@ -649,6 +682,50 @@ export default function Tetris() {
       {/* Background Grid Pattern */}
       <div className="absolute inset-0 -z-20 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
 
+      {/* Persistent Global Cyber Framing */}
+      <div className="absolute top-0 inset-x-0 h-16 bg-gradient-to-b from-cyan-500/10 to-transparent pointer-events-none z-40">
+        <div className="absolute top-0 inset-x-0 h-[1px] bg-cyan-500/20" />
+        <div className="flex justify-between px-6 pt-2">
+          <div className="flex items-center gap-3">
+             <div className="w-1 h-3 bg-cyan-400 animate-pulse" />
+             <div className="text-[10px] font-mono tracking-[0.4em] text-cyan-400/60 uppercase">System_Active // Port: 8080</div>
+          </div>
+          <div className="text-[10px] font-mono tracking-[0.2em] text-white/20 uppercase hidden sm:block">Neural_Interface_v0.9.4</div>
+        </div>
+      </div>
+
+      <div className="absolute bottom-0 inset-x-0 h-16 bg-gradient-to-t from-purple-500/10 to-transparent pointer-events-none z-40">
+        <div className="absolute bottom-0 inset-x-0 h-[1px] bg-purple-500/20" />
+        <div className="flex justify-between px-6 pb-2 items-end h-full">
+          <div className="flex gap-4">
+             <div className="flex flex-col gap-1">
+                <div className="w-32 h-[1px] bg-white/10" />
+                <div className="text-[7px] font-mono text-white/30 tracking-widest uppercase italic">Sub_Relay_042</div>
+             </div>
+             <div className="flex gap-1 h-3 items-end">
+                {[...Array(8)].map((_, i) => (
+                  <motion.div 
+                    key={i}
+                    animate={{ height: [2, 10, 4, 8, 2] }}
+                    transition={{ duration: 0.8 + Math.random(), repeat: Infinity, ease: "linear" }}
+                    className="w-[1.5px] bg-purple-500/40"
+                  />
+                ))}
+             </div>
+          </div>
+          <div className="text-[10px] font-mono text-purple-400/40 uppercase tracking-[0.5em] hidden sm:block">Deep_Dive_Sequence</div>
+        </div>
+      </div>
+
+      {/* Screen Corner Brackets */}
+      <div className="absolute top-6 left-6 w-12 h-12 border-t border-l border-white/10 z-30 pointer-events-none" />
+      <div className="absolute top-6 right-6 w-12 h-12 border-t border-r border-white/10 z-30 pointer-events-none" />
+      <div className="absolute bottom-6 left-6 w-12 h-12 border-b border-l border-white/10 z-30 pointer-events-none" />
+      <div className="absolute bottom-6 right-6 w-12 h-12 border-b border-r border-white/10 z-30 pointer-events-none" />
+
+      {/* Subtle Scanlines Overlay */}
+      <div className="absolute inset-0 z-30 pointer-events-none opacity-[0.03] bg-[linear-gradient(rgba(18,16,16,0)_50%,rgba(0,0,0,0.25)_50%),linear-gradient(90deg,rgba(255,0,0,0.06),rgba(0,255,0,0.02),rgba(0,0,255,0.06))] bg-[length:100%_2px,3px_100%]" />
+
       <AnimatePresence mode="wait">
         {gameState === 'MENU' ? (
           <motion.div 
@@ -717,7 +794,6 @@ export default function Tetris() {
                 >
                   <Settings className="h-4 w-4" /> System Settings
                 </Button>
-                <p className="text-white/20 font-mono text-[10px] tracking-[0.4em] uppercase">Neural Link Sync Status: Ready</p>
               </div>
             </motion.div>
           </motion.div>
@@ -726,8 +802,43 @@ export default function Tetris() {
             key="game"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="flex flex-row gap-2 sm:gap-4 items-center justify-center w-full max-w-5xl"
+            className="flex flex-row gap-2 sm:gap-4 items-center justify-center w-full max-w-5xl relative"
           >
+            {/* Horizontal Decorative Bars for Game View */}
+            <div className="absolute top-[-40px] inset-x-0 flex items-center justify-center pointer-events-none">
+              <div className="w-16 h-[1px] bg-gradient-to-r from-transparent via-cyan-400/40 to-transparent" />
+              <div className="mx-4 text-[9px] font-mono tracking-[0.6em] text-cyan-400/40 font-bold uppercase italic">Neural_Dive_Engaged</div>
+              <div className="w-16 h-[1px] bg-gradient-to-l from-transparent via-cyan-400/40 to-transparent" />
+            </div>
+
+            <div className="absolute bottom-[-40px] inset-x-0 flex items-center justify-center pointer-events-none">
+               <div className="flex gap-2 items-center">
+                  <div className="text-[8px] font-mono tracking-[0.3em] text-white/10 uppercase">Security_Protocol_Active</div>
+                  <div className="w-1 h-1 rounded-full bg-cyan-500/40 animate-pulse" />
+                  <div className="w-48 h-[1px] bg-white/5" />
+               </div>
+            </div>
+
+            {/* Left Decor: Vertical Scanning Line */}
+            <div className="absolute -left-20 top-0 bottom-0 w-[1px] bg-white/5 hidden xl:block">
+               <motion.div 
+                 animate={{ top: ['0%', '100%'] }}
+                 transition={{ duration: 4, repeat: Infinity, ease: "linear" }}
+                 className="absolute top-0 left-0 w-full h-12 bg-gradient-to-b from-transparent via-cyan-500 to-transparent"
+               />
+               <div className="absolute top-1/2 -translate-y-1/2 -left-4 text-[8px] font-mono vertical-rl rotate-180 uppercase tracking-widest text-white/10">PERIPHERAL_SYNC</div>
+            </div>
+
+            {/* Right Decor */}
+            <div className="absolute -right-20 top-0 bottom-0 w-[1px] bg-white/5 hidden xl:block">
+               <motion.div 
+                 animate={{ top: ['100%', '0%'] }}
+                 transition={{ duration: 6, repeat: Infinity, ease: "linear" }}
+                 className="absolute top-0 left-0 w-full h-24 bg-gradient-to-b from-transparent via-purple-500/30 to-transparent"
+               />
+               <div className="absolute top-1/2 -translate-y-1/2 -right-4 text-[8px] font-mono vertical-rl uppercase tracking-widest text-white/10">BUFFER_v.9.9.2</div>
+            </div>
+
             {/* Left: Game Area */}
             <div className="flex flex-col items-center">
               <div className="relative group origin-center">
