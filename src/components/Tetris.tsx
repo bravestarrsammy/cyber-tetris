@@ -117,12 +117,27 @@ export default function Tetris() {
     const handleResize = () => {
       setCellSize(getDynamicCellSize());
     };
+    
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'hidden' && gameState === 'PLAYING' && !gameOver && !paused) {
+        setPaused(true);
+        setDropTime(null);
+        sounds.stopMusic();
+      }
+    };
+
     if (gameState === 'MENU') {
       sounds.startMenuMusic();
     }
+
     window.addEventListener('resize', handleResize);
-    return () => window.removeEventListener('resize', handleResize);
-  }, [gameState]);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [gameState, gameOver, paused]);
 
   const touchStartRef = useRef<{ x: number, y: number } | null>(null);
   const touchLastRef = useRef<{ x: number, y: number } | null>(null);
