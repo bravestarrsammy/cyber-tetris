@@ -43,6 +43,24 @@ export default function Tetris() {
   const [paused, setPaused] = useState(false);
   const [dropTime, setDropTime] = useState<number | null>(null);
   const [particles, setParticles] = useState<Particle[]>([]);
+  // Dynamic cell size based on viewport height
+  const getDynamicCellSize = () => {
+    if (typeof window === 'undefined') return 30;
+    const padding = window.innerWidth < 640 ? 10 : 80;
+    const sizeByHeight = Math.floor((window.innerHeight - padding) / ROWS);
+    const sizeByWidth = Math.floor((window.innerWidth - (window.innerWidth < 640 ? 120 : 300)) / COLS);
+    return Math.min(sizeByHeight, sizeByWidth, window.innerWidth < 640 ? 35 : 45);
+  };
+
+  const [cellSize, setCellSize] = useState(getDynamicCellSize());
+
+  useEffect(() => {
+    const handleResize = () => {
+      setCellSize(getDynamicCellSize());
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
 
   const touchStartRef = useRef<{ x: number, y: number } | null>(null);
   const touchLastRef = useRef<{ x: number, y: number } | null>(null);
@@ -82,8 +100,8 @@ export default function Tetris() {
       for (let i = 0; i < count; i++) {
         newParticles.push({
           id: Math.random(),
-          x: x * 30 + 15,
-          y: y * 30 + 15,
+          x: x * cellSize + cellSize / 2,
+          y: y * cellSize + cellSize / 2,
           color: colorClass,
           vx: (Math.random() - 0.5) * 10,
           vy: (Math.random() - 0.5) * 10 - 5,
@@ -399,17 +417,17 @@ export default function Tetris() {
   };
 
   return (
-    <div className="relative flex flex-row gap-4 items-start justify-center p-2 min-h-screen bg-[#050505] text-white font-sans selection:bg-cyan-500/30 overflow-hidden">
+    <div className="relative flex flex-row gap-2 sm:gap-4 items-center justify-center p-0 sm:p-4 h-screen max-h-screen bg-[#050505] text-white font-sans selection:bg-cyan-500/30 overflow-hidden">
       {/* Background Ambient Glow */}
-      <div className="absolute top-0 left-1/4 w-[500px] h-[500px] bg-cyan-500/10 rounded-full blur-[120px] -z-10 animate-pulse" />
-      <div className="absolute bottom-0 right-1/4 w-[500px] h-[500px] bg-purple-600/10 rounded-full blur-[120px] -z-10" />
+      <div className="absolute top-0 left-1/4 w-[300px] sm:w-[500px] h-[300px] sm:h-[500px] bg-cyan-500/10 rounded-full blur-[100px] sm:blur-[120px] -z-10 animate-pulse" />
+      <div className="absolute bottom-0 right-1/4 w-[300px] sm:w-[500px] h-[300px] sm:h-[500px] bg-purple-600/10 rounded-full blur-[100px] sm:blur-[120px] -z-10" />
       
       {/* Background Grid Pattern */}
       <div className="absolute inset-0 -z-20 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
 
       {/* Left: Game Area */}
       <div className="flex flex-col items-center">
-        <div className="relative group scale-90 sm:scale-100 origin-top">
+        <div className="relative group origin-center">
           {/* Neon Border Effect */}
           <div className="absolute -inset-[2px] bg-gradient-to-b from-cyan-500/50 via-purple-500/50 to-blue-500/50 rounded-xl blur-[2px]"></div>
           
@@ -420,15 +438,15 @@ export default function Tetris() {
             onTouchMove={handleTouchMove}
             onTouchEnd={handleTouchEnd}
             style={{ 
-              width: COLS * 28, 
-              height: ROWS * 28,
+              width: COLS * cellSize, 
+              height: ROWS * cellSize,
               display: 'grid',
               gridTemplateColumns: `repeat(${COLS}, 1fr)`,
               gridTemplateRows: `repeat(${ROWS}, 1fr)`
             }}
           >
             {/* Board Pattern (Internal Grid) */}
-            <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:28px_28px]" />
+            <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)]" style={{ backgroundSize: `${cellSize}px ${cellSize}px` }} />
 
             {/* Settled Blocks */}
             {grid.map((row, y) => 
@@ -439,7 +457,7 @@ export default function Tetris() {
                   <div 
                     key={`settled-${y}-${x}`}
                     className={`absolute border border-white/20 rounded-sm ${tetromino.color}`}
-                    style={{ top: y * 28, left: x * 28, width: 28, height: 28 }}
+                    style={{ top: y * cellSize, left: x * cellSize, width: cellSize, height: cellSize }}
                   />
                 );
               })
@@ -455,9 +473,9 @@ export default function Tetris() {
                       key={`ghost-${y}-${x}`}
                       className="absolute border-2 border-white/20 rounded-sm bg-white/5"
                       style={{ 
-                        top: (y + ghostPos.y) * 28, 
-                        left: (x + ghostPos.x) * 28,
-                        width: 28, height: 28
+                        top: (y + ghostPos.y) * cellSize, 
+                        left: (x + ghostPos.x) * cellSize,
+                        width: cellSize, height: cellSize
                       }}
                     />
                   );
@@ -475,9 +493,9 @@ export default function Tetris() {
                       key={`active-${y}-${x}`}
                       className={`absolute border border-white/30 rounded-sm ${activePiece.tetromino.color}`}
                       style={{ 
-                        top: (y + activePiece.pos.y) * 28, 
-                        left: (x + activePiece.pos.x) * 28,
-                        width: 28, height: 28
+                        top: (y + activePiece.pos.y) * cellSize, 
+                        left: (x + activePiece.pos.x) * cellSize,
+                        width: cellSize, height: cellSize
                       }}
                     />
                   );
@@ -491,8 +509,8 @@ export default function Tetris() {
                 key={p.id}
                 className={`absolute w-2 h-2 rounded-full ${p.color} shadow-[0_0_8px_currentColor]`}
                 style={{ 
-                  left: p.x * (28/30), 
-                  top: p.y * (28/30),
+                  left: p.x, 
+                  top: p.y,
                   opacity: p.life,
                   transform: `scale(${p.life})`
                 }}
