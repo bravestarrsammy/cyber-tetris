@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">syber-tetris</string>
+    <string name="title_activity_main">syber-tetris</string>
+    <string name="package_name">com.sammystudio.sybertetris</string>
+    <string name="custom_url_scheme">com.sammystudio.sybertetris</string>
+</resources>
