@@ -2,6 +2,8 @@ class SoundManager {
   private ctx: AudioContext | null = null;
   private sfxEnabled: boolean = true;
   private musicEnabled: boolean = true;
+  private sfxVolume: number = 1.0;
+  private musicVolume: number = 0.5;
 
   setSFXEnabled(enabled: boolean) {
     this.sfxEnabled = enabled;
@@ -14,8 +16,25 @@ class SoundManager {
     }
   }
 
+  setSFXVolume(volume: number) {
+    if (isFinite(volume)) {
+      this.sfxVolume = Math.max(0, volume);
+    }
+  }
+
+  setMusicVolume(volume: number) {
+    if (isFinite(volume)) {
+      this.musicVolume = Math.max(0, volume);
+    }
+  }
+
   getSettings() {
-    return { sfx: this.sfxEnabled, music: this.musicEnabled };
+    return { 
+      sfx: this.sfxEnabled, 
+      music: this.musicEnabled,
+      sfxVolume: this.sfxVolume,
+      musicVolume: this.musicVolume
+    };
   }
 
   private initCtx() {
@@ -41,14 +60,17 @@ class SoundManager {
     this.initCtx();
     if (!this.ctx) return;
 
+    if (!isFinite(freq) || !isFinite(duration) || !isFinite(volume)) return;
+
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
 
     osc.type = type;
     osc.frequency.setValueAtTime(freq, this.ctx.currentTime);
     
-    gain.gain.setValueAtTime(volume, this.ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.01, this.ctx.currentTime + duration);
+    const finalVolume = Math.max(0.001, volume * this.sfxVolume);
+    gain.gain.setValueAtTime(finalVolume, this.ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
 
     osc.connect(gain);
     gain.connect(this.ctx.destination);
@@ -77,6 +99,9 @@ class SoundManager {
     const now = this.ctx.currentTime;
     const duration = 0.15;
     
+    const vol = Math.max(0.001, 0.3 * this.sfxVolume);
+    if (!isFinite(vol)) return;
+
     // Low frequency thud
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
@@ -85,8 +110,8 @@ class SoundManager {
     osc.frequency.setValueAtTime(80, now);
     osc.frequency.exponentialRampToValueAtTime(40, now + duration);
     
-    gain.gain.setValueAtTime(0.3, now);
-    gain.gain.exponentialRampToValueAtTime(0.01, now + duration);
+    gain.gain.setValueAtTime(vol, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
     
     osc.connect(gain);
     gain.connect(this.ctx.destination);
@@ -99,8 +124,10 @@ class SoundManager {
     const noiseGain = this.ctx.createGain();
     noiseOsc.type = 'square';
     noiseOsc.frequency.setValueAtTime(40, now);
-    noiseGain.gain.setValueAtTime(0.05, now);
-    noiseGain.gain.exponentialRampToValueAtTime(0.01, now + 0.05);
+    
+    const nVol = Math.max(0.001, 0.05 * this.sfxVolume);
+    noiseGain.gain.setValueAtTime(nVol, now);
+    noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
     noiseOsc.connect(noiseGain);
     noiseGain.connect(this.ctx.destination);
     noiseOsc.start(now);
@@ -115,6 +142,9 @@ class SoundManager {
     const now = this.ctx.currentTime;
     const duration = 0.5;
     
+    const vol = Math.max(0.001, 0.2 * this.sfxVolume);
+    if (!isFinite(vol)) return;
+
     // Create noise for explosion
     const bufferSize = this.ctx.sampleRate * duration;
     const buffer = this.ctx.createBuffer(1, bufferSize, this.ctx.sampleRate);
@@ -133,8 +163,8 @@ class SoundManager {
     filter.frequency.exponentialRampToValueAtTime(40, now + duration);
     
     const gain = this.ctx.createGain();
-    gain.gain.setValueAtTime(0.2, now);
-    gain.gain.exponentialRampToValueAtTime(0.01, now + duration);
+    gain.gain.setValueAtTime(vol, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + duration);
     
     noise.connect(filter);
     filter.connect(gain);
@@ -149,8 +179,10 @@ class SoundManager {
     thud.type = 'triangle';
     thud.frequency.setValueAtTime(100, now);
     thud.frequency.exponentialRampToValueAtTime(40, now + 0.2);
-    thudGain.gain.setValueAtTime(0.3, now);
-    thudGain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+    
+    const tVol = Math.max(0.001, 0.3 * this.sfxVolume);
+    thudGain.gain.setValueAtTime(tVol, now);
+    thudGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
     thud.connect(thudGain);
     thudGain.connect(this.ctx.destination);
     thud.start(now);
@@ -165,6 +197,9 @@ class SoundManager {
 
     const now = this.ctx.currentTime;
     const duration = 1.0;
+    
+    const vol = Math.max(0, 0.15 * this.sfxVolume);
+    if (!isFinite(vol)) return;
 
     // A low, descending dissonant tone
     const osc1 = this.ctx.createOscillator();
@@ -180,7 +215,7 @@ class SoundManager {
     osc2.frequency.setValueAtTime(115, now); // Dissonance
     osc2.frequency.exponentialRampToValueAtTime(45, now + duration);
 
-    gain.gain.setValueAtTime(0.15, now);
+    gain.gain.setValueAtTime(vol, now);
     gain.gain.linearRampToValueAtTime(0, now + duration);
 
     osc1.connect(gain);
@@ -224,12 +259,13 @@ class SoundManager {
       osc.frequency.setValueAtTime(freq, now);
       osc.frequency.exponentialRampToValueAtTime(freq / 2, now + 0.1);
       
-      gain.gain.setValueAtTime(0.03, now);
+      const vol = Math.max(0.001, 0.03 * this.musicVolume);
+      gain.gain.setValueAtTime(vol, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
       
       const filter = this.ctx.createBiquadFilter();
       filter.type = 'lowpass';
-      filter.frequency.setValueAtTime(1200 + Math.sin(now) * 600, now);
+      filter.frequency.setValueAtTime(Math.max(1, 1200 + Math.sin(now) * 600), now);
       
       osc.connect(filter);
       filter.connect(gain);
@@ -243,8 +279,10 @@ class SoundManager {
         const bassGain = this.ctx.createGain();
         bassOsc.type = 'triangle';
         bassOsc.frequency.setValueAtTime(55, now);
-        bassGain.gain.setValueAtTime(0.08, now);
-        bassGain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+        
+        const bVol = Math.max(0.001, 0.08 * this.musicVolume);
+        bassGain.gain.setValueAtTime(bVol, now);
+        bassGain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
         bassOsc.connect(bassGain);
         bassGain.connect(this.ctx.destination);
         bassOsc.start(now);
@@ -286,7 +324,8 @@ class SoundManager {
       osc.type = 'triangle'; // Mellower than sawtooth
       osc.frequency.setValueAtTime(freq, now);
       
-      gain.gain.setValueAtTime(0.025, now);
+      const vol = Math.max(0.001, 0.025 * this.musicVolume);
+      gain.gain.setValueAtTime(vol, now);
       gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
       
       const filter = this.ctx.createBiquadFilter();
@@ -309,8 +348,9 @@ class SoundManager {
         kickOsc.frequency.setValueAtTime(100, now);
         kickOsc.frequency.exponentialRampToValueAtTime(40, now + 0.2);
         
-        kickGain.gain.setValueAtTime(0.08, now);
-        kickGain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+        const kVol = Math.max(0.001, 0.08 * this.musicVolume);
+        kickGain.gain.setValueAtTime(kVol, now);
+        kickGain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
         
         kickOsc.connect(kickGain);
         kickGain.connect(this.ctx.destination);
@@ -333,7 +373,8 @@ class SoundManager {
         noiseFilter.type = 'highpass';
         noiseFilter.frequency.setValueAtTime(8000, now);
         
-        noiseGain.gain.setValueAtTime(0.01, now);
+        const nVol = Math.max(0.001, 0.01 * this.musicVolume);
+        noiseGain.gain.setValueAtTime(nVol, now);
         noiseGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
         
         noise.connect(noiseFilter);

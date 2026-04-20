@@ -13,6 +13,7 @@ import { useInterval } from '@/src/hooks/useInterval';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Slider } from '@/components/ui/slider';
 import { Trophy, Play, RotateCcw, Pause, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Settings, Volume2, VolumeX, Music, Home, X } from 'lucide-react';
 import { sounds } from '@/src/utils/audio';
 
@@ -60,13 +61,18 @@ export default function Tetris() {
   const [showConfirmMenu, setShowConfirmMenu] = useState(false);
   const [sfxEnabled, setSfxEnabled] = useState(true);
   const [musicEnabled, setMusicEnabled] = useState(true);
+  const [musicVolume, setMusicVolume] = useState(0.5);
+  const [sfxVolume, setSfxVolume] = useState(1.0);
   // Dynamic cell size based on viewport height
   const getDynamicCellSize = () => {
     if (typeof window === 'undefined') return 30;
-    const padding = window.innerWidth < 640 ? 10 : 80;
+    const padding = window.innerWidth < 640 ? 80 : 180; // Increased padding to force a smaller board
     const sizeByHeight = Math.floor((window.innerHeight - padding) / ROWS);
-    const sizeByWidth = Math.floor((window.innerWidth - (window.innerWidth < 640 ? 120 : 300)) / COLS);
-    return Math.min(sizeByHeight, sizeByWidth, window.innerWidth < 640 ? 35 : 45);
+    const sidebarWidth = window.innerWidth < 640 ? 95 : 170; 
+    const horizontalMargin = window.innerWidth < 640 ? 30 : 80; 
+    const sizeByWidth = Math.floor((window.innerWidth - sidebarWidth - horizontalMargin) / COLS);
+    // Reduced max size from 26/32 to 22/28 for a more compact feel
+    return Math.max(15, Math.min(sizeByHeight, sizeByWidth, window.innerWidth < 640 ? 22 : 28)); 
   };
 
   const [cellSize, setCellSize] = useState(getDynamicCellSize());
@@ -97,6 +103,24 @@ export default function Tetris() {
       setMusicEnabled(enabled);
       sounds.setMusicEnabled(enabled);
     }
+
+    const savedMusicVolume = localStorage.getItem('cyber-tetris-music-volume');
+    if (savedMusicVolume !== null) {
+      const vol = parseFloat(savedMusicVolume);
+      if (!isNaN(vol)) {
+        setMusicVolume(vol);
+        sounds.setMusicVolume(vol);
+      }
+    }
+
+    const savedSFXVolume = localStorage.getItem('cyber-tetris-sfx-volume');
+    if (savedSFXVolume !== null) {
+      const vol = parseFloat(savedSFXVolume);
+      if (!isNaN(vol)) {
+        setSfxVolume(vol);
+        sounds.setSFXVolume(vol);
+      }
+    }
   }, []);
 
   useEffect(() => {
@@ -113,6 +137,26 @@ export default function Tetris() {
       }
     }
   }, [score, highScores, gameState, gameMode]);
+
+  // Level System: Increase level every 10 rows and adjust falling speed
+  useEffect(() => {
+    if (gameState === 'PLAYING' && !gameOver) {
+      const calculatedLevel = Math.floor(rows / 10) + 1;
+      if (calculatedLevel !== level) {
+        setLevel(calculatedLevel);
+        // Each level reduces drop time. Speed formula: 1000ms base, decreasing.
+        // We ensure a minimum speed of 100ms for playability.
+        const newSpeed = Math.max(100, 1000 - (calculatedLevel - 1) * 100);
+        
+        if (!paused) {
+          setDropTime(newSpeed);
+          if (musicEnabled) {
+            sounds.startGameMusic(calculatedLevel);
+          }
+        }
+      }
+    }
+  }, [rows, gameState, gameOver, paused, musicEnabled, level]);
 
   useEffect(() => {
     const handleResize = () => {
@@ -147,7 +191,7 @@ export default function Tetris() {
       }
     });
 
-    // Web standard listener for tab switching/minimizing in browsers
+  // Web standard listener for tab switching/minimizing in browsers
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'hidden') {
         stopAppActivity();
@@ -226,9 +270,8 @@ export default function Tetris() {
     const newParticles: Particle[] = [];
     types.forEach((type, x) => {
       if (type === 0) return;
-      const colorClass = TETROMINOS[type].color.split(' ')[0];
+      const colorClass = TETROMINOS[type]?.color?.split(' ')[0] || 'bg-white';
       
-      // Create 5-8 particles per block
       const count = 5 + Math.floor(Math.random() * 4);
       for (let i = 0; i < count; i++) {
         newParticles.push({
@@ -243,6 +286,39 @@ export default function Tetris() {
       }
     });
     setParticles(prev => [...prev, ...newParticles]);
+  };
+
+  const handleLanding = (newGrid: (TetrominoType | 0)[][]) => {
+    let linesCleared = 0;
+    const finalGrid = newGrid.reduce((acc, row, y) => {
+      if (row.every(cell => cell !== 0)) {
+        linesCleared++;
+        createExplosion(y, row);
+        acc.unshift(Array(COLS).fill(0));
+        return acc;
+      }
+      acc.push(row);
+      return acc;
+    }, [] as (TetrominoType | 0)[][]);
+
+    if (linesCleared > 0) {
+      setRows(prev => prev + linesCleared);
+      setScore(prev => prev + [0, 40, 100, 300, 1200][linesCleared] * level);
+      
+      // Time bonus for 3 or more lines
+      if (gameMode === 'TIME_TRIAL' && linesCleared >= 3) {
+        setTimeLeft(prev => prev + 10);
+        setTimeBonusActive(true);
+        setTimeout(() => setTimeBonusActive(false), 2000);
+      }
+      
+      sounds.playClear();
+    } else {
+      sounds.playLand();
+    }
+
+    setGrid(finalGrid);
+    spawnPiece();
   };
 
   // Collision detection
@@ -305,6 +381,28 @@ export default function Tetris() {
     }
   };
 
+  const handleMusicVolumeChange = (values: any) => {
+    const val = Array.isArray(values) ? values[0] : values;
+    const volNum = parseFloat(val);
+    if (!isNaN(volNum) && isFinite(volNum)) {
+      const volume = Math.max(0, Math.min(1, volNum / 100));
+      setMusicVolume(volume);
+      sounds.setMusicVolume(volume);
+      localStorage.setItem('cyber-tetris-music-volume', volume.toString());
+    }
+  };
+
+  const handleSFXVolumeChange = (values: any) => {
+    const val = Array.isArray(values) ? values[0] : values;
+    const volNum = parseFloat(val);
+    if (!isNaN(volNum) && isFinite(volNum)) {
+      const volume = Math.max(0, Math.min(1, volNum / 100));
+      setSfxVolume(volume);
+      sounds.setSFXVolume(volume);
+      localStorage.setItem('cyber-tetris-sfx-volume', volume.toString());
+    }
+  };
+
   // Time Trial Timer
   useEffect(() => {
     let timerId: any;
@@ -361,6 +459,7 @@ export default function Tetris() {
   };
 
   const createCyberFireworks = () => {
+    sounds.playTone(600, 'sine', 0.5, 0.4);
     const newParticles: Particle[] = [];
     const colors = ['text-cyan-400', 'text-purple-400', 'text-blue-400', 'text-pink-400', 'text-yellow-400'];
     
@@ -437,17 +536,6 @@ export default function Tetris() {
   const drop = (isManual: boolean = false) => {
     if (gameOver || paused) return;
 
-    // Increase level every 10 rows
-    if (rows > level * 10) {
-      const nextLevel = level + 1;
-      setLevel(nextLevel);
-      setDropTime(1000 / (nextLevel + 1) + 200);
-      // Dynamic music speed up on level gain
-      if (musicEnabled) {
-        sounds.startGameMusic(nextLevel);
-      }
-    }
-
     if (!activePiece) return;
 
     const newPos = { x: activePiece.pos.x, y: activePiece.pos.y + 1 };
@@ -456,50 +544,18 @@ export default function Tetris() {
       if (isManual) sounds.playMove();
     } else {
       // Merge piece into grid
-      const newGrid = [...grid];
+      const newGrid = grid.map(row => [...row]);
       activePiece.tetromino.shape.forEach((row, y) => {
         row.forEach((value, x) => {
           if (value !== 0) {
             const gridY = y + activePiece.pos.y;
             const gridX = x + activePiece.pos.x;
-            if (newGrid[gridY]) {
-              newGrid[gridY][gridX] = activePiece.tetromino.type;
-            }
+            if (newGrid[gridY]) newGrid[gridY][gridX] = activePiece.tetromino.type;
           }
         });
       });
 
-      // Clear lines
-      let linesCleared = 0;
-      const filteredGrid = newGrid.reduce((acc, row, y) => {
-        if (row.every(cell => cell !== 0)) {
-          linesCleared++;
-          createExplosion(y, row);
-          acc.unshift(Array(COLS).fill(0));
-          return acc;
-        }
-        acc.push(row);
-        return acc;
-      }, [] as (TetrominoType | 0)[][]);
-
-      if (linesCleared > 0) {
-        setRows(prev => prev + linesCleared);
-        setScore(prev => prev + [0, 40, 100, 300, 1200][linesCleared] * level);
-        
-        // Time bonus for 3 or more lines
-        if (gameMode === 'TIME_TRIAL' && linesCleared >= 3) {
-          setTimeLeft(prev => prev + 10);
-          setTimeBonusActive(true);
-          setTimeout(() => setTimeBonusActive(false), 2000);
-        }
-        
-        sounds.playClear();
-      } else {
-        sounds.playLand();
-      }
-
-      setGrid(filteredGrid);
-      spawnPiece();
+      handleLanding(newGrid);
     }
   };
 
@@ -511,50 +567,18 @@ export default function Tetris() {
     }
     
     // Merge immediately
-    const newGrid = [...grid];
+    const newGrid = grid.map(row => [...row]);
     activePiece.tetromino.shape.forEach((row, y) => {
       row.forEach((value, x) => {
         if (value !== 0) {
           const gridY = y + newY;
           const gridX = x + activePiece.pos.x;
-          if (newGrid[gridY]) {
-            newGrid[gridY][gridX] = activePiece.tetromino.type;
-          }
+          if (newGrid[gridY]) newGrid[gridY][gridX] = activePiece.tetromino.type;
         }
       });
     });
 
-    let linesCleared = 0;
-    const filteredGrid = newGrid.reduce((acc, row, y) => {
-      if (row.every(cell => cell !== 0)) {
-        linesCleared++;
-        createExplosion(y, row);
-        acc.unshift(Array(COLS).fill(0));
-        return acc;
-      }
-      acc.push(row);
-      return acc;
-    }, [] as (TetrominoType | 0)[][]);
-
-    if (linesCleared > 0) {
-      setRows(prev => prev + linesCleared);
-      setScore(prev => prev + [0, 40, 100, 300, 1200][linesCleared] * level);
-      
-      // Time bonus for 3 or more lines
-      if (gameMode === 'TIME_TRIAL' && linesCleared >= 3) {
-        setTimeLeft(prev => prev + 10);
-        setTimeBonusActive(true);
-        setTimeout(() => setTimeBonusActive(false), 2000);
-      }
-      
-      sounds.playClear();
-    } else {
-      sounds.playDrop();
-      sounds.playLand();
-    }
-
-    setGrid(filteredGrid);
-    spawnPiece();
+    handleLanding(newGrid);
   };
 
   useInterval(() => {
@@ -675,12 +699,75 @@ export default function Tetris() {
       onTouchStart={handleGlobalInteraction}
       className="relative flex flex-row gap-2 sm:gap-4 items-center justify-center p-0 sm:p-4 h-screen max-h-screen bg-[#050505] text-white font-sans selection:bg-cyan-500/30 overflow-hidden"
     >
+      {/* Digital Circuit Background with Data Streams */}
+      <div className="absolute inset-0 -z-20 bg-[#050505] overflow-hidden">
+        {/* Base Circuit Grid */}
+        <div className="absolute inset-0 opacity-[0.15] circuit-pattern" />
+        
+        {/* Animated Data Streams */}
+        {[...Array(12)].map((_, i) => (
+          <motion.div
+            key={`stream-h-${i}`}
+            className="absolute h-[1px] bg-gradient-to-r from-transparent via-cyan-400 to-transparent opacity-20"
+            style={{ 
+              top: `${(i * 9) + 4}%`, 
+              left: 0, 
+              right: 0,
+              width: '100px'
+            }}
+            animate={{ 
+              left: ['-20%', '120%'],
+            }}
+            transition={{ 
+              duration: 3 + (i % 4), 
+              repeat: Infinity, 
+              delay: i * 0.7,
+              ease: "linear"
+            }}
+          />
+        ))}
+
+        {[...Array(10)].map((_, i) => (
+          <motion.div
+            key={`stream-v-${i}`}
+            className="absolute w-[1px] bg-gradient-to-b from-transparent via-purple-500 to-transparent opacity-20"
+            style={{ 
+              left: `${(i * 11) + 5}%`, 
+              top: 0, 
+              bottom: 0,
+              height: '100px'
+            }}
+            animate={{ 
+              top: ['-20%', '120%'],
+            }}
+            transition={{ 
+              duration: 4 + (i % 3), 
+              repeat: Infinity, 
+              delay: i * 1.2,
+              ease: "linear"
+            }}
+          />
+        ))}
+
+        {/* Static decorative joints */}
+        {[...Array(20)].map((_, i) => (
+          <div 
+            key={`joint-${i}`}
+            className="circuit-joint"
+            style={{ 
+              left: `${(Math.sin(i) * 50 + 50)}%`, 
+              top: `${(Math.cos(i * 1.3) * 50 + 50)}%` 
+            }}
+          />
+        ))}
+      </div>
+
       {/* Background Ambient Glow */}
       <div className="absolute top-0 left-1/4 w-[300px] sm:w-[500px] h-[300px] sm:h-[500px] bg-cyan-500/10 rounded-full blur-[100px] sm:blur-[120px] -z-10 animate-pulse" />
       <div className="absolute bottom-0 right-1/4 w-[300px] sm:w-[500px] h-[300px] sm:h-[500px] bg-purple-600/10 rounded-full blur-[100px] sm:blur-[120px] -z-10" />
       
-      {/* Background Grid Pattern */}
-      <div className="absolute inset-0 -z-20 opacity-[0.03]" style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
+      {/* Background Grid Pattern (Modified to be more subtle with circuit) */}
+      <div className="absolute inset-0 -z-20 opacity-[0.02]" style={{ backgroundImage: 'radial-gradient(circle, white 1px, transparent 1px)', backgroundSize: '40px 40px' }} />
 
       {/* Persistent Global Cyber Framing */}
       <div className="absolute top-0 inset-x-0 h-16 bg-gradient-to-b from-cyan-500/10 to-transparent pointer-events-none z-40">
@@ -802,7 +889,7 @@ export default function Tetris() {
             key="game"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="flex flex-row gap-2 sm:gap-4 items-center justify-center w-full max-w-5xl relative"
+            className="flex flex-row gap-3 sm:gap-6 items-center justify-center w-full max-w-5xl relative px-4"
           >
             {/* Horizontal Decorative Bars for Game View */}
             <div className="absolute top-[-40px] inset-x-0 flex items-center justify-center pointer-events-none">
@@ -842,12 +929,19 @@ export default function Tetris() {
             {/* Left: Game Area */}
             <div className="flex flex-col items-center">
               <div className="relative group origin-center">
-                {/* Neon Border Effect */}
-                <div className="absolute -inset-[2px] bg-gradient-to-b from-cyan-500/50 via-purple-500/50 to-blue-500/50 rounded-xl blur-[2px]"></div>
+                {/* Double Neon Frame Effect (Outside Play Area) */}
+                {/* Outer Frame - Brightest */}
+                <div className="absolute -inset-[10px] border-2 border-cyan-400/90 rounded-xl pointer-events-none shadow-[0_0_25px_rgba(34,211,238,0.5),inset_0_0_10px_rgba(34,211,238,0.2)]" />
+                
+                {/* Middle Frame */}
+                <div className="absolute -inset-[6px] border border-cyan-500/60 rounded-lg pointer-events-none shadow-[0_0_15px_rgba(34,211,238,0.3)]" />
+                
+                {/* Inner Frame - Faintest */}
+                <div className="absolute -inset-[2px] border border-cyan-600/30 rounded-md pointer-events-none" />
                 
                 <div 
                   ref={gameBoardRef}
-                  className="relative bg-neutral-900 border border-white/20 rounded-lg overflow-hidden shadow-[0_0_40px_rgba(0,0,0,0.8)] touch-none"
+                  className="relative bg-[#050a24] overflow-hidden shadow-[0_40px_80px_rgba(0,0,0,0.9)] touch-none"
                   onTouchStart={handleTouchStart}
                   onTouchMove={handleTouchMove}
                   onTouchEnd={handleTouchEnd}
@@ -860,7 +954,27 @@ export default function Tetris() {
                   }}
                 >
                   {/* Board Pattern (Internal Grid) */}
-                  <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)]" style={{ backgroundSize: `${cellSize}px ${cellSize}px` }} />
+                  <div className="absolute inset-0 bg-[linear-gradient(rgba(50,130,184,0.3)_1px,transparent_1px),linear-gradient(90deg,rgba(50,130,184,0.3)_1px,transparent_1px)]" style={{ backgroundSize: `${cellSize}px ${cellSize}px` }} />
+
+                  {/* Settled Blocks */}
+                  {grid.map((row, y) => 
+                    row.map((type, x) => {
+                      if (type === 0) return null;
+                      const tetromino = TETROMINOS[type];
+                      return (
+                        <div 
+                          key={`settled-${y}-${x}`}
+                          className={`absolute border-2 rounded-none ${tetromino.color}`}
+                          style={{ 
+                            top: y * cellSize + 1, 
+                            left: x * cellSize + 1, 
+                            width: cellSize - 2, 
+                            height: cellSize - 2
+                          }}
+                        />
+                      );
+                    })
+                  )}
 
                   {/* Time Trial Countdown */}
                   {gameMode === 'TIME_TRIAL' && !gameOver && (
@@ -883,53 +997,20 @@ export default function Tetris() {
                     </div>
                   )}
 
-                  {/* New Record Toast */}
-                  <AnimatePresence>
-                    {isNewRecord && (
-                      <motion.div 
-                        initial={{ opacity: 0, y: 50, scale: 0.5 }}
-                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                        exit={{ opacity: 0, y: -50, scale: 1.5 }}
-                        className="absolute inset-x-0 top-1/4 z-[60] flex flex-col items-center justify-center pointer-events-none"
-                      >
-                        <div className="bg-cyan-500/20 backdrop-blur-md border-2 border-cyan-400 px-8 py-3 rounded-none skew-x-[-12deg] shadow-[0_0_30px_rgba(34,211,238,0.5)]">
-                          <h3 className="text-2xl font-black text-cyan-400 tracking-[0.3em] italic uppercase leading-none drop-shadow-[0_0_8px_rgba(34,211,238,1)] animate-pulse">
-                            New Record!
-                          </h3>
-                        </div>
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-
-                  {/* Settled Blocks */}
-                  {grid.map((row, y) => 
-                    row.map((type, x) => {
-                      if (type === 0) return null;
-                      const tetromino = TETROMINOS[type];
-                      return (
-                        <div 
-                          key={`settled-${y}-${x}`}
-                          className={`absolute border border-white/20 rounded-sm ${tetromino.color}`}
-                          style={{ top: y * cellSize, left: x * cellSize, width: cellSize, height: cellSize }}
-                        />
-                      );
-                    })
-                  )}
-
                   {/* Ghost Piece */}
                   {activePiece && ghostPos && !gameOver && !paused && (
                     activePiece.tetromino.shape.map((row, y) => 
                       row.map((value, x) => {
                         if (value === 0) return null;
-                        const baseColor = activePiece.tetromino.color.split(' ')[0].replace('bg-', 'border-');
+                        const borderColorClass = activePiece.tetromino.color.split(' ')[0]; // first class is border-...
                         return (
                           <div 
                             key={`ghost-${y}-${x}`}
-                            className={`absolute border-2 ${baseColor} opacity-30 rounded-sm bg-transparent shadow-[0_0_10px_rgba(255,255,255,0.1)]`}
+                            className={`absolute border-2 border-dashed ${borderColorClass} opacity-40 rounded-none bg-white/5 shadow-[inset_0_0_4px_rgba(255,255,255,0.1)]`}
                             style={{ 
-                              top: (y + ghostPos.y) * cellSize, 
-                              left: (x + ghostPos.x) * cellSize,
-                              width: cellSize, height: cellSize
+                              top: (y + ghostPos.y) * cellSize + 1, 
+                              left: (x + ghostPos.x) * cellSize + 1,
+                              width: cellSize - 2, height: cellSize - 2
                             }}
                           />
                         );
@@ -945,11 +1026,12 @@ export default function Tetris() {
                         return (
                           <motion.div 
                             key={`active-${y}-${x}`}
-                            className={`absolute border border-white/30 rounded-sm ${activePiece.tetromino.color}`}
+                            className={`absolute border-2 rounded-none ${activePiece.tetromino.color}`}
                             style={{ 
-                              top: (y + activePiece.pos.y) * cellSize, 
-                              left: (x + activePiece.pos.x) * cellSize,
-                              width: cellSize, height: cellSize
+                              top: (y + activePiece.pos.y) * cellSize + 1, 
+                              left: (x + activePiece.pos.x) * cellSize + 1,
+                              width: cellSize - 2, 
+                              height: cellSize - 2,
                             }}
                           />
                         );
@@ -1073,24 +1155,26 @@ export default function Tetris() {
             </div>
 
             {/* Right: Scoreboard & Next Piece */}
-            <div className="flex flex-col gap-2 w-[110px] sm:w-[200px] pt-1 h-full max-h-[100%]">
+            <div className="flex flex-col gap-2 w-[95px] sm:w-[170px] pt-1 h-full max-h-[100%]">
               {/* Next Piece Card */}
-              <Card className="bg-black/40 border-white/10 backdrop-blur-md">
-                <CardHeader className="p-2">
+              <Card className="bg-[#050a24]/60 border-white/10 backdrop-blur-md">
+                <CardHeader className="p-1 sm:p-2">
                   <CardTitle className="text-[10px] uppercase tracking-wide text-white/40 font-mono text-center">Next</CardTitle>
                 </CardHeader>
-                <CardContent className="flex items-center justify-center h-16 p-0 pb-2">
-                  <div className="relative" style={{ width: 40, height: 40 }}>
+                <CardContent className="flex items-center justify-center h-20 p-0 pb-1">
+                  <div className="relative" style={{ width: 60, height: 60 }}>
                     {nextPiece.shape.map((row, y) => 
                       row.map((value, x) => {
                         if (value === 0) return null;
                         return (
                           <div 
                             key={`next-${y}-${x}`}
-                            className={`absolute w-3 h-3 border border-white/10 rounded-xs ${nextPiece.color}`}
+                            className={`absolute border rounded-none ${nextPiece.color}`}
                             style={{ 
-                              top: y * 12 + (nextPiece.type === 'I' ? 5 : 10), 
-                              left: x * 12 + (nextPiece.type === 'I' ? 0 : 5) 
+                              width: 15,
+                              height: 15,
+                              top: y * 16 + (nextPiece.type === 'I' ? 10 : 15), 
+                              left: x * 16 + (nextPiece.type === 'I' ? 0 : 7),
                             }}
                           />
                         );
@@ -1101,8 +1185,8 @@ export default function Tetris() {
               </Card>
 
               {/* Stats Card */}
-              <Card className="bg-black/40 border-white/10 backdrop-blur-md overflow-hidden flex-1 max-h-[260px]">
-                <CardContent className="p-2 sm:p-4 space-y-4">
+              <Card className="bg-[#050a24]/60 border-white/10 backdrop-blur-md overflow-hidden flex-1 max-h-[240px]">
+                <CardContent className="p-2 sm:p-3 space-y-3 sm:space-y-4">
                   <div className="space-y-1">
                     <span className="text-[9px] uppercase text-white/30 font-mono block">Sync Score</span>
                     <div className="text-xl sm:text-2xl font-black font-mono tracking-tighter text-cyan-400 tabular-nums leading-none">
@@ -1117,18 +1201,18 @@ export default function Tetris() {
                     </div>
                   </div>
 
-                  <div className="space-y-3 pt-4 border-t border-white/5">
-                    <div className="flex justify-between items-center">
-                      <span className="text-[9px] uppercase text-white/30 font-mono">Neural Level</span>
-                      <span className="text-sm font-bold text-white leading-none">{level}</span>
+                  <div className="space-y-2 pt-2 border-t border-white/5">
+                    <div className="flex justify-between items-center text-[9px] font-mono">
+                      <span className="uppercase text-white/30">Neural Level</span>
+                      <span className="font-bold text-white leading-none">{level}</span>
                     </div>
-                    <div className="flex justify-between items-center">
-                      <span className="text-[9px] uppercase text-white/30 font-mono">Blocks Linked</span>
-                      <span className="text-sm font-bold text-white leading-none">{rows}</span>
+                    <div className="flex justify-between items-center text-[9px] font-mono">
+                      <span className="uppercase text-white/30">Blocks Linked</span>
+                      <span className="font-bold text-white leading-none">{rows}</span>
                     </div>
                   </div>
 
-                  <div className="pt-2">
+                  <div className="pt-1">
                     <Button 
                       variant="ghost" 
                       size="sm"
@@ -1140,10 +1224,10 @@ export default function Tetris() {
                           sounds.startGameMusic(level);
                         }
                       }}
-                      className="w-full h-8 border border-white/5 bg-white/5 hover:bg-white/10 text-white/60 text-[10px] uppercase tracking-tighter font-mono"
+                      className="w-full h-8 border border-white/5 bg-white/5 hover:bg-white/10 text-white/60 text-[9px] uppercase tracking-tighter font-mono flex items-center justify-center gap-1"
                     >
-                      {paused ? <Play className="h-3 w-3 mr-1" /> : <Pause className="h-3 w-3 mr-1" />}
-                      {paused ? 'RESUME' : 'PAUSE'}
+                      {paused ? <Play className="h-3 w-3 fill-current" /> : <Pause className="h-3 w-3 fill-current" />}
+                      <span>{paused ? 'Resume' : 'Pause'}</span>
                     </Button>
                   </div>
                 </CardContent>
@@ -1152,6 +1236,32 @@ export default function Tetris() {
           </motion.div>
         )}
       </AnimatePresence>
+      <AnimatePresence>
+        {isNewRecord && (
+          <motion.div 
+            initial={{ opacity: 0, scale: 0.5 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 1.5 }}
+            className="fixed inset-0 z-[200] flex flex-col items-center justify-center pointer-events-none"
+          >
+            <motion.div 
+              initial={{ y: 50 }}
+              animate={{ y: 0 }}
+              exit={{ y: -50 }}
+              className="bg-cyan-500/20 backdrop-blur-xl border-2 border-cyan-400 px-12 py-6 rounded-none skew-x-[-12deg] shadow-[0_0_50px_rgba(34,211,238,0.6)] relative"
+            >
+              <div className="absolute -top-2 -left-2 w-4 h-4 border-t-2 border-l-2 border-cyan-400" />
+              <div className="absolute -bottom-2 -right-2 w-4 h-4 border-b-2 border-r-2 border-cyan-400" />
+              
+              <h1 className="text-4xl sm:text-6xl font-black text-cyan-400 tracking-[0.4em] italic uppercase leading-none drop-shadow-[0_0_15px_rgba(34,211,238,1)] animate-pulse text-center">
+                New Record!
+              </h1>
+              <p className="text-cyan-300/60 font-mono text-xs tracking-[0.5em] uppercase mt-4 text-center">Neural Link Synchronized</p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Global Overlays (Settings) */}
       <AnimatePresence>
         {showSettings && (
@@ -1180,44 +1290,78 @@ export default function Tetris() {
               </div>
               
               <div className="p-6 space-y-6">
-                {/* Music Toggle */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-purple-500/10 rounded-lg">
-                      <Music className={`h-5 w-5 ${musicEnabled ? 'text-purple-400' : 'text-white/20'}`} />
+                {/* SFX Toggle */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-cyan-500/10 rounded-lg">
+                        {sfxEnabled ? <Volume2 className="h-5 w-5 text-cyan-400" /> : <VolumeX className="h-5 w-5 text-white/20" />}
+                      </div>
+                      <div>
+                        <p className="font-bold text-sm text-white/90">Haptic Feedback</p>
+                        <p className="text-[10px] text-white/30 font-mono tracking-widest uppercase">Sound Effects</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-bold text-sm text-white/90">Atmospheric Audio</p>
-                      <p className="text-[10px] text-white/30 font-mono tracking-widest uppercase">Music Link</p>
-                    </div>
+                    <Button
+                      onClick={toggleSFX}
+                      variant={sfxEnabled ? "default" : "outline"}
+                      className={`h-8 w-16 rounded-full transition-all duration-300 ${sfxEnabled ? 'bg-cyan-500 hover:bg-cyan-600 border-none' : 'border-white/10 text-white/20'}`}
+                    >
+                      <div className={`h-4 w-4 bg-white rounded-full transition-all duration-300 transform ${sfxEnabled ? 'translate-x-3' : '-translate-x-3'}`} />
+                    </Button>
                   </div>
-                  <Button
-                    onClick={toggleMusic}
-                    variant={musicEnabled ? "default" : "outline"}
-                    className={`h-8 w-16 rounded-full transition-all duration-300 ${musicEnabled ? 'bg-purple-600 hover:bg-purple-700 border-none' : 'border-white/10 text-white/20'}`}
-                  >
-                    <div className={`h-4 w-4 bg-white rounded-full transition-all duration-300 transform ${musicEnabled ? 'translate-x-3' : '-translate-x-3'}`} />
-                  </Button>
+                  {sfxEnabled && (
+                    <div className="px-1 pt-1">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[9px] font-mono text-white/20 uppercase tracking-widest">Effect Volume</span>
+                        <span className="text-[9px] font-mono text-cyan-500/50">{Math.round(sfxVolume * 100)}%</span>
+                      </div>
+                      <Slider 
+                        value={[isNaN(sfxVolume) ? 100 : sfxVolume * 100]} 
+                        onValueChange={handleSFXVolumeChange}
+                        max={100} 
+                        step={1}
+                        className="[&_[data-slot=slider-range]]:bg-cyan-500/50"
+                      />
+                    </div>
+                  )}
                 </div>
 
-                {/* SFX Toggle */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-3">
-                    <div className="p-2 bg-cyan-500/10 rounded-lg">
-                      {sfxEnabled ? <Volume2 className="h-5 w-5 text-cyan-400" /> : <VolumeX className="h-5 w-5 text-white/20" />}
+                {/* Music Toggle */}
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="p-2 bg-purple-500/10 rounded-lg">
+                        <Music className={`h-5 w-5 ${musicEnabled ? 'text-purple-400' : 'text-white/20'}`} />
+                      </div>
+                      <div>
+                        <p className="font-bold text-sm text-white/90">Atmospheric Audio</p>
+                        <p className="text-[10px] text-white/30 font-mono tracking-widest uppercase">Music Link</p>
+                      </div>
                     </div>
-                    <div>
-                      <p className="font-bold text-sm text-white/90">Haptic Feedback</p>
-                      <p className="text-[10px] text-white/30 font-mono tracking-widest uppercase">Sound Effects</p>
-                    </div>
+                    <Button
+                      onClick={toggleMusic}
+                      variant={musicEnabled ? "default" : "outline"}
+                      className={`h-8 w-16 rounded-full transition-all duration-300 ${musicEnabled ? 'bg-purple-600 hover:bg-purple-700 border-none' : 'border-white/10 text-white/20'}`}
+                    >
+                      <div className={`h-4 w-4 bg-white rounded-full transition-all duration-300 transform ${musicEnabled ? 'translate-x-3' : '-translate-x-3'}`} />
+                    </Button>
                   </div>
-                  <Button
-                    onClick={toggleSFX}
-                    variant={sfxEnabled ? "default" : "outline"}
-                    className={`h-8 w-16 rounded-full transition-all duration-300 ${sfxEnabled ? 'bg-cyan-500 hover:bg-cyan-600 border-none' : 'border-white/10 text-white/20'}`}
-                  >
-                    <div className={`h-4 w-4 bg-white rounded-full transition-all duration-300 transform ${sfxEnabled ? 'translate-x-3' : '-translate-x-3'}`} />
-                  </Button>
+                  {musicEnabled && (
+                    <div className="px-1 pt-1">
+                      <div className="flex items-center justify-between mb-2">
+                        <span className="text-[9px] font-mono text-white/20 uppercase tracking-widest">Master Volume</span>
+                        <span className="text-[9px] font-mono text-purple-500/50">{Math.round(musicVolume * 100)}%</span>
+                      </div>
+                      <Slider 
+                        value={[isNaN(musicVolume) ? 50 : musicVolume * 100]} 
+                        onValueChange={handleMusicVolumeChange}
+                        max={100} 
+                        step={1}
+                        className="[&_[data-slot=slider-range]]:bg-purple-500/50"
+                      />
+                    </div>
+                  )}
                 </div>
               </div>
 
