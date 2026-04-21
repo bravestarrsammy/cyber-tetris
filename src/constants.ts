@@ -2,7 +2,7 @@ export const COLS = 10;
 export const ROWS = 20;
 export const BLOCK_SIZE = 30;
 
-export type TetrominoType = 'I' | 'J' | 'L' | 'O' | 'S' | 'T' | 'Z';
+export type TetrominoType = 'I' | 'J' | 'L' | 'O' | 'S' | 'T' | 'Z' | 'BOMB' | 'CHEST' | 'LOCK';
 
 export interface Tetromino {
   shape: number[][];
@@ -73,6 +73,21 @@ export const TETROMINOS: Record<TetrominoType, Tetromino> = {
     ],
     color: 'border-red-500 bg-red-500/20 shadow-[0_0_15px_rgba(239,68,68,0.6),inset_0_0_8px_rgba(239,68,68,0.3)]',
     type: 'Z',
+  },
+  BOMB: {
+    shape: [[1]],
+    color: 'border-red-400 bg-red-600/40 shadow-[0_0_20px_rgba(220,38,38,0.8),inset_0_0_10px_rgba(220,38,38,0.5)] animate-pulse',
+    type: 'BOMB',
+  },
+  CHEST: {
+    shape: [[1]],
+    color: 'border-yellow-400 bg-yellow-600/40 shadow-[0_0_20px_rgba(234,179,8,0.8),inset_0_0_10px_rgba(234,179,8,0.5)]',
+    type: 'CHEST',
+  },
+  LOCK: {
+    shape: [[1]],
+    color: 'border-zinc-500 bg-zinc-800/90 shadow-[0_0_10px_rgba(255,255,255,0.2),inset_0_0_5px_rgba(0,0,0,0.5)]',
+    type: 'LOCK',
   },
 };
 

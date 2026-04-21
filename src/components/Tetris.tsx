@@ -32,13 +32,21 @@ const createGrid = () => Array.from({ length: ROWS }, () => Array(COLS).fill(0))
 
 export default function Tetris() {
   const [gameState, setGameState] = useState<'MENU' | 'PLAYING'>('MENU');
-  const [gameMode, setGameMode] = useState<'CLASSIC' | 'TIME_TRIAL'>('CLASSIC');
+  const [gameMode, setGameMode] = useState<'CLASSIC' | 'TIME_TRIAL' | 'INVADER'>('CLASSIC');
   const [timeLeft, setTimeLeft] = useState(120); // 120 seconds for Time Trial
-  const [highScores, setHighScores] = useState({ CLASSIC: 0, TIME_TRIAL: 0 });
+  const [highScores, setHighScores] = useState({ CLASSIC: 0, TIME_TRIAL: 0, INVADER: 0 });
   const [timeBonusActive, setTimeBonusActive] = useState(false);
   const [lastWarningTime, setLastWarningTime] = useState<number | null>(null);
 
   const [grid, setGrid] = useState<(TetrominoType | 0)[][]>(createGrid());
+  const gridRef = useRef(grid);
+  const [turretX, setTurretX] = useState(Math.floor(COLS / 2) - 1);
+  const turretXRef = useRef(turretX);
+  const [bullets, setBullets] = useState<{ id: number, x: number, y: number, type: TetrominoType }[]>([]);
+  const nextBulletId = useRef(0);
+  const [lockHealth, setLockHealth] = useState<Record<string, number>>({});
+  const [showRewardDialog, setShowRewardDialog] = useState(false);
+  const [rewardChoices, setRewardChoices] = useState<string[]>([]);
   const [activePiece, setActivePiece] = useState<{
     pos: { x: number; y: number };
     tetromino: Tetromino;
@@ -76,18 +84,33 @@ export default function Tetris() {
   };
 
   const [cellSize, setCellSize] = useState(getDynamicCellSize());
+  const cellSizeRef = useRef(cellSize);
+
+  useEffect(() => {
+    gridRef.current = grid;
+  }, [grid]);
+
+  useEffect(() => {
+    turretXRef.current = turretX;
+  }, [turretX]);
+
+  useEffect(() => {
+    cellSizeRef.current = cellSize;
+  }, [cellSize]);
 
   const currentHighScore = highScores[gameMode];
 
   useEffect(() => {
     const savedClassic = localStorage.getItem('cyber-tetris-highscore-classic');
     const savedTimeTrial = localStorage.getItem('cyber-tetris-highscore-timetrial');
+    const savedInvader = localStorage.getItem('cyber-tetris-highscore-invader');
     // Migration from old single score
     const oldSaved = localStorage.getItem('cyber-tetris-highscore');
     
     setHighScores({
       CLASSIC: savedClassic ? parseInt(savedClassic, 10) : (oldSaved ? parseInt(oldSaved, 10) : 0),
-      TIME_TRIAL: savedTimeTrial ? parseInt(savedTimeTrial, 10) : 0
+      TIME_TRIAL: savedTimeTrial ? parseInt(savedTimeTrial, 10) : 0,
+      INVADER: savedInvader ? parseInt(savedInvader, 10) : 0
     });
 
     const savedSFX = localStorage.getItem('cyber-tetris-sfx');
@@ -288,6 +311,153 @@ export default function Tetris() {
     setParticles(prev => [...prev, ...newParticles]);
   };
 
+  const fireBullet = () => {
+    if (gameOver || paused || gameMode !== 'INVADER') return;
+    
+    // Turret fires 
+    sounds.playTone(400, 'square', 0.1, 0.05);
+    
+    // Choose bullet type
+    const roll = Math.random();
+    const type: TetrominoType = roll > 0.95 ? 'BOMB' : (['I', 'J', 'L', 'O', 'S', 'T', 'Z'][Math.floor(Math.random() * 7)] as TetrominoType);
+
+    setBullets(prev => [...prev, {
+      id: nextBulletId.current++,
+      x: turretXRef.current + 1, // Use synchronized ref to avoid enclosure delay
+      y: ROWS - 3,
+      type
+    }]);
+  };
+
+  const handleInvaderTick = () => {
+    if (gameOver || paused || gameState !== 'PLAYING') return;
+
+    // Descent logic
+    setGrid(prev => {
+      // Check for lose condition before moving
+      if (prev[ROWS - 3].some(cell => cell !== 0)) {
+        setGameOver(true);
+        setDropTime(null);
+        sounds.playGameOver();
+        return prev;
+      }
+
+      const newGrid = [...prev.map(r => [...r])];
+      newGrid.pop();
+      
+      // Generate row with exactly one random gap
+      const gapIndex = Math.floor(Math.random() * COLS);
+      const newRow = Array(COLS).fill(0).map((_, i) => {
+        if (i === gapIndex) return 0;
+        
+        const roll = Math.random();
+        if (roll > 0.98) return 'CHEST';
+        if (roll > 0.93) return 'BOMB';
+        if (roll > 0.88) return 'LOCK';
+        return (['I', 'J', 'L', 'O', 'S', 'T', 'Z'][Math.floor(Math.random() * 7)] as TetrominoType);
+      });
+      
+      newGrid.unshift(newRow);
+      return newGrid;
+    });
+  };
+
+  const handleInvaderLanding = (newGrid: (TetrominoType | 0)[][]) => {
+    let linesCleared = 0;
+    const finalGrid = newGrid.reduce((acc, row, y) => {
+      // Lines are cleared only if y < ROWS - 3 (to avoid turret area clearing if logic somehow overlaps)
+      if (y < ROWS - 3 && row.every(cell => cell !== 0)) {
+        linesCleared++;
+        createExplosion(y, row);
+        acc.unshift(Array(COLS).fill(0));
+        return acc;
+      }
+      acc.push(row);
+      return acc;
+    }, [] as (TetrominoType | 0)[][]);
+
+    if (linesCleared > 0) {
+      setRows(prev => prev + linesCleared);
+      setScore(prev => prev + [0, 40, 100, 300, 1200][linesCleared] * level);
+      sounds.playClear();
+    }
+    setGrid(finalGrid);
+  };
+
+  // Bullet movement and collision handling
+  useEffect(() => {
+    if (gameMode !== 'INVADER' || gameOver || paused || gameState !== 'PLAYING') return;
+
+    let lastTime = performance.now();
+    let frameId: number;
+
+    const update = (currentTime: number) => {
+      const deltaTime = currentTime - lastTime;
+      // Fixed speed: 12 cells per second. deltaTime is in ms. 
+      // Speed in cells per ms: 12 / 1000 = 0.012
+      const step = 0.012 * deltaTime;
+      
+      if (deltaTime >= 16) { // Update approx 60 times a second
+        lastTime = currentTime;
+
+        setBullets(prev => {
+          if (prev.length === 0) return prev;
+          
+          const nextBullets: typeof prev = [];
+          const currentGrid = gridRef.current;
+
+          prev.forEach(bullet => {
+            const nextY = bullet.y - step; 
+            const gy = Math.floor(nextY);
+            const gx = Math.floor(bullet.x);
+
+            // Raycast/Step collision: check if it hit a block or reached top
+            let hit = false;
+            // Precise collision check
+            const checkY = Math.ceil(nextY); // The cell we are entering bottom-up
+            
+            if (nextY < 0) {
+              hit = true;
+              setGrid(currentBoard => {
+                const newGrid = currentBoard.map(r => [...r]);
+                if (newGrid[0][gx] === 0) {
+                  newGrid[0][gx] = bullet.type;
+                  setTimeout(() => handleInvaderLanding(newGrid), 0);
+                }
+                return newGrid;
+              });
+            } else if (checkY >= 0 && checkY < ROWS && currentGrid[checkY][gx] !== 0) {
+              hit = true;
+              const targetY = checkY + 1; // Settle below the hit block
+              if (targetY < ROWS - 2) { // Avoid turret collision
+                setGrid(currentBoard => {
+                  const newGrid = currentBoard.map(r => [...r]);
+                  if (newGrid[targetY][gx] === 0) {
+                    newGrid[targetY][gx] = bullet.type;
+                    setTimeout(() => handleInvaderLanding(newGrid), 0);
+                  }
+                  return newGrid;
+                });
+                sounds.playLand();
+              }
+            }
+
+            if (!hit) {
+              nextBullets.push({ ...bullet, y: nextY });
+            }
+          });
+
+          return nextBullets;
+        });
+      }
+      frameId = requestAnimationFrame(update);
+    };
+
+    frameId = requestAnimationFrame(update);
+
+    return () => cancelAnimationFrame(frameId);
+  }, [gameMode, gameOver, paused, gameState]);
+
   const handleLanding = (newGrid: (TetrominoType | 0)[][]) => {
     let linesCleared = 0;
     const finalGrid = newGrid.reduce((acc, row, y) => {
@@ -432,9 +602,34 @@ export default function Tetris() {
     return () => clearInterval(timerId);
   }, [gameState, gameMode, paused, gameOver]);
 
-  // Start game
-  const startGame = (mode: 'CLASSIC' | 'TIME_TRIAL' = 'CLASSIC') => {
-    setGrid(createGrid());
+  const startGame = (mode: 'CLASSIC' | 'TIME_TRIAL' | 'INVADER' = 'CLASSIC') => {
+    let initialGrid = createGrid();
+    if (mode === 'INVADER') {
+      // Fill the first 6 rows with exactly one random gap per row
+      for (let y = 0; y < 6; y++) {
+        const gapIndex = Math.floor(Math.random() * COLS);
+        for (let x = 0; x < COLS; x++) {
+          if (x === gapIndex) {
+            initialGrid[y][x] = 0;
+          } else {
+            const types: TetrominoType[] = ['I', 'J', 'L', 'O', 'S', 'T', 'Z', 'BOMB', 'CHEST', 'LOCK'];
+            const roll = Math.random();
+            let type: TetrominoType;
+            if (roll > 0.98) type = 'CHEST';
+            else if (roll > 0.93) type = 'BOMB';
+            else if (roll > 0.88) type = 'LOCK';
+            else type = types[Math.floor(Math.random() * 7)];
+            
+            initialGrid[y][x] = type;
+            if (type === 'LOCK') {
+              setLockHealth(prev => ({ ...prev, [`${y}-${x}`]: 3 }));
+            }
+          }
+        }
+      }
+    }
+    
+    setGrid(initialGrid);
     setGameMode(mode);
     setGameOver(false);
     setScore(0);
@@ -443,17 +638,25 @@ export default function Tetris() {
     setTimeLeft(120);
     setPaused(false);
     setDropTime(1000);
+    setBullets([]);
+    setTurretX(Math.floor(COLS / 2) - 1);
     recordTriggeredRef.current = false;
     startingHighScoreRef.current = highScores[mode];
     setIsNewRecord(false);
-    const firstPiece = RANDOM_TETROMINO();
-    const next = RANDOM_TETROMINO();
-    setNextPiece(next);
-    setActivePiece({ 
-      pos: { x: Math.floor(COLS / 2) - 1, y: 0 }, 
-      tetromino: firstPiece, 
-      collided: false 
-    });
+    
+    if (mode !== 'INVADER') {
+      const firstPiece = RANDOM_TETROMINO();
+      const next = RANDOM_TETROMINO();
+      setNextPiece(next);
+      setActivePiece({ 
+        pos: { x: Math.floor(COLS / 2) - 1, y: 0 }, 
+        tetromino: firstPiece, 
+        collided: false 
+      });
+    } else {
+      setActivePiece(null);
+    }
+    
     setGameState('PLAYING');
     sounds.startGameMusic(1);
   };
@@ -581,9 +784,14 @@ export default function Tetris() {
     handleLanding(newGrid);
   };
 
+  // Game Loop
   useInterval(() => {
-    drop();
-  }, dropTime);
+    if (gameMode === 'INVADER') {
+      handleInvaderTick();
+    } else {
+      drop();
+    }
+  }, gameMode === 'INVADER' ? (dropTime || 1000) * 5 : dropTime);
 
   // Keyboard controls
   useEffect(() => {
@@ -592,20 +800,38 @@ export default function Tetris() {
       
       switch(e.key) {
         case 'ArrowLeft':
-          movePiece({ x: -1, y: 0 });
+          if (gameMode === 'INVADER') {
+            setTurretX(prev => Math.max(-1, prev - 1));
+            sounds.playMove();
+          } else {
+            movePiece({ x: -1, y: 0 });
+          }
           break;
         case 'ArrowRight':
-          movePiece({ x: 1, y: 0 });
+          if (gameMode === 'INVADER') {
+            setTurretX(prev => Math.min(COLS - 2, prev + 1));
+            sounds.playMove();
+          } else {
+            movePiece({ x: 1, y: 0 });
+          }
           break;
         case 'ArrowDown':
-          drop(true);
+          if (gameMode !== 'INVADER') drop(true);
           break;
         case 'ArrowUp':
-          handleRotate();
+          if (gameMode === 'INVADER') {
+            fireBullet();
+          } else {
+            handleRotate();
+          }
           break;
         case ' ':
           e.preventDefault();
-          hardDrop();
+          if (gameMode === 'INVADER') {
+            fireBullet();
+          } else {
+            hardDrop();
+          }
           break;
         case 'p':
         case 'P':
@@ -636,7 +862,7 @@ export default function Tetris() {
   const ghostPos = getGhostPos();
 
   const handleTouchStart = (e: React.TouchEvent) => {
-    if (gameOver || paused || !activePiece) return;
+    if (gameOver || paused) return;
     const touch = e.touches[0];
     touchStartRef.current = { x: touch.clientX, y: touch.clientY };
     touchLastRef.current = { x: touch.clientX, y: touch.clientY };
@@ -644,20 +870,28 @@ export default function Tetris() {
   };
 
   const handleTouchMove = (e: React.TouchEvent) => {
-    if (!touchStartRef.current || !touchLastRef.current || gameOver || paused || !activePiece) return;
+    if (!touchStartRef.current || !touchLastRef.current || gameOver || paused) return;
     const touch = e.touches[0];
     const deltaX = touch.clientX - touchLastRef.current.x;
     const deltaY = touch.clientY - touchLastRef.current.y;
     
     // Horizontal movement: move piece every 25px displacement
     if (Math.abs(deltaX) > 25) {
-      movePiece({ x: deltaX > 0 ? 1 : -1, y: 0 });
+      if (gameMode === 'INVADER') {
+        setTurretX(prev => {
+          const next = prev + (deltaX > 0 ? 1 : -1);
+          return Math.max(-1, Math.min(COLS - 2, next));
+        });
+        sounds.playMove();
+      } else if (activePiece) {
+        movePiece({ x: deltaX > 0 ? 1 : -1, y: 0 });
+      }
       touchLastRef.current.x = touch.clientX;
       isMovingRef.current = true;
     }
 
     // Vertical movement (Soft Drop): move piece down every 20px displacement
-    if (deltaY > 20) {
+    if (deltaY > 20 && gameMode !== 'INVADER' && activePiece) {
       drop(true);
       touchLastRef.current.y = touch.clientY;
       isMovingRef.current = true;
@@ -665,17 +899,21 @@ export default function Tetris() {
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
-    if (!touchStartRef.current || gameOver || paused || !activePiece) return;
+    if (!touchStartRef.current || gameOver || paused) return;
     const touch = e.changedTouches[0];
     const totalDeltaX = touch.clientX - touchStartRef.current.x;
     const totalDeltaY = touch.clientY - touchStartRef.current.y;
 
-    // Determine action: Tap (minimal movement) -> Rotate
+    // Determine action: Tap (minimal movement) -> Rotate or Fire
     if (!isMovingRef.current && Math.abs(totalDeltaX) < 15 && Math.abs(totalDeltaY) < 15) {
-      handleRotate();
+      if (gameMode === 'INVADER') {
+        fireBullet();
+      } else {
+        handleRotate();
+      }
     } 
     // Downward swipe (large vertical displacement) -> Hard drop
-    else if (totalDeltaY > 80 && Math.abs(totalDeltaX) < 60) {
+    else if (totalDeltaY > 80 && Math.abs(totalDeltaX) < 60 && gameMode !== 'INVADER') {
       hardDrop();
     }
 
@@ -854,6 +1092,16 @@ export default function Tetris() {
             >
               <div className="flex flex-col gap-4">
                 <Button 
+                  onClick={() => startGame('INVADER')}
+                  className="group relative overflow-hidden bg-transparent border-2 border-green-500/50 hover:border-green-400 text-green-400 px-12 py-8 text-xl font-black uppercase tracking-widest rounded-none transform transition-transform hover:scale-105 active:scale-95"
+                >
+                  <div className="absolute inset-0 bg-green-500/10 group-hover:bg-green-500/20 transition-colors" />
+                  <div className="absolute top-0 left-0 w-2 h-2 border-t-2 border-l-2 border-green-400" />
+                  <div className="absolute bottom-0 right-0 w-2 h-2 border-b-2 border-r-2 border-green-400" />
+                  INVADER MODE
+                </Button>
+
+                <Button 
                   onClick={() => startGame('CLASSIC')}
                   className="group relative overflow-hidden bg-transparent border-2 border-cyan-500/50 hover:border-cyan-400 text-cyan-400 px-12 py-8 text-xl font-black uppercase tracking-widest rounded-none transform transition-transform hover:scale-105 active:scale-95"
                 >
@@ -998,7 +1246,7 @@ export default function Tetris() {
                   )}
 
                   {/* Ghost Piece */}
-                  {activePiece && ghostPos && !gameOver && !paused && (
+                  {activePiece && ghostPos && !gameOver && !paused && gameMode !== 'INVADER' && (
                     activePiece.tetromino.shape.map((row, y) => 
                       row.map((value, x) => {
                         if (value === 0) return null;
@@ -1019,7 +1267,7 @@ export default function Tetris() {
                   )}
 
                   {/* Active Piece */}
-                  {activePiece && !gameOver && !paused && (
+                  {activePiece && !gameOver && !paused && gameMode !== 'INVADER' && (
                     activePiece.tetromino.shape.map((row, y) => 
                       row.map((value, x) => {
                         if (value === 0) return null;
@@ -1037,6 +1285,51 @@ export default function Tetris() {
                         );
                       })
                     )
+                  )}
+
+                  {/* Invader Mode: Turret & Bullets */}
+                  {gameMode === 'INVADER' && !gameOver && !paused && (
+                    <>
+                      {/* Bullets */}
+                      {bullets.map(bullet => (
+                        <motion.div 
+                          key={bullet.id}
+                          className={`absolute ${TETROMINOS[bullet.type].color} border shadow-[0_0_10px_rgba(255,255,255,0.5)]`}
+                          style={{
+                            left: bullet.x * cellSize + 1,
+                            top: bullet.y * cellSize + 1,
+                            width: cellSize - 2,
+                            height: cellSize - 2,
+                          }}
+                        />
+                      ))}
+                      
+                      {/* Turret */}
+                      <div className="absolute inset-x-0 bottom-0 pointer-events-none" style={{ height: cellSize * 2 }}>
+                        {/* Base */}
+                        <div 
+                          className="absolute bg-cyan-500 shadow-[0_0_15px_#22d3ee] border border-cyan-300 transition-all duration-75"
+                          style={{ 
+                            left: turretX * cellSize, 
+                            bottom: 0, 
+                            width: cellSize * 3, 
+                            height: cellSize,
+                            borderRadius: '4px 4px 0 0'
+                          }} 
+                        />
+                        {/* Gun Head */}
+                        <div 
+                          className="absolute bg-cyan-400 shadow-[0_0_15px_#22d3ee] border border-cyan-200 transition-all duration-75"
+                          style={{ 
+                            left: (turretX + 1) * cellSize, 
+                            bottom: cellSize, 
+                            width: cellSize, 
+                            height: cellSize,
+                            borderRadius: '4px 4px 0 0'
+                          }} 
+                        />
+                      </div>
+                    </>
                   )}
 
                   {/* Particles */}
@@ -1149,6 +1442,44 @@ export default function Tetris() {
                         </div>
                       </motion.div>
                     )}
+
+                    {showRewardDialog && (
+                      <motion.div 
+                        initial={{ opacity: 0, scale: 0.8 }}
+                        animate={{ opacity: 1, scale: 1 }}
+                        exit={{ opacity: 0, scale: 0.8 }}
+                        className="absolute inset-0 z-[65] flex items-center justify-center bg-black/90 backdrop-blur-md p-4"
+                      >
+                        <div className="bg-[#050a24] border-2 border-cyan-400 p-6 rounded-none shadow-[0_0_30px_rgba(34,211,238,0.4)] max-w-xs w-full text-center">
+                          <div className="flex justify-center mb-4">
+                             <div className="w-12 h-12 rounded-full bg-yellow-500/20 border-2 border-yellow-500 flex items-center justify-center shadow-[0_0_15px_#eab308]">
+                                <Trophy className="text-yellow-500 h-6 w-6" />
+                             </div>
+                          </div>
+                          <h3 className="text-cyan-400 font-black text-xl mb-1 italic tracking-tighter uppercase">Treasure Unlocked</h3>
+                          <p className="text-[10px] text-white/40 mb-6 font-mono uppercase tracking-widest">Select your enhancement</p>
+                          <div className="flex flex-col gap-3">
+                            {rewardChoices.map((choice) => (
+                              <Button 
+                                key={choice}
+                                onClick={() => {
+                                  if (choice === '+500 SCORE') setScore(s => s + 500);
+                                  if (choice === 'LEVEL DOWN') setLevel(l => Math.max(1, l - 1));
+                                  if (choice === 'BOOST') setScore(s => Math.floor(s * 1.2));
+                                  setShowRewardDialog(false);
+                                  setPaused(false);
+                                  sounds.playTone(600, 'sine', 0.2, 0.2);
+                                }}
+                                variant="outline"
+                                className="border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/20 hover:border-cyan-400 rounded-none uppercase font-mono text-[10px] h-10 tracking-widest group"
+                              >
+                                <span className="group-hover:animate-pulse">{choice}</span>
+                              </Button>
+                            ))}
+                          </div>
+                        </div>
+                      </motion.div>
+                    )}
                   </AnimatePresence>
                 </div>
               </div>
@@ -1157,32 +1488,34 @@ export default function Tetris() {
             {/* Right: Scoreboard & Next Piece */}
             <div className="flex flex-col gap-2 w-[95px] sm:w-[170px] pt-1 h-full max-h-[100%]">
               {/* Next Piece Card */}
-              <Card className="bg-[#050a24]/60 border-white/10 backdrop-blur-md">
-                <CardHeader className="p-1 sm:p-2">
-                  <CardTitle className="text-[10px] uppercase tracking-wide text-white/40 font-mono text-center">Next</CardTitle>
-                </CardHeader>
-                <CardContent className="flex items-center justify-center h-20 p-0 pb-1">
-                  <div className="relative" style={{ width: 60, height: 60 }}>
-                    {nextPiece.shape.map((row, y) => 
-                      row.map((value, x) => {
-                        if (value === 0) return null;
-                        return (
-                          <div 
-                            key={`next-${y}-${x}`}
-                            className={`absolute border rounded-none ${nextPiece.color}`}
-                            style={{ 
-                              width: 15,
-                              height: 15,
-                              top: y * 16 + (nextPiece.type === 'I' ? 10 : 15), 
-                              left: x * 16 + (nextPiece.type === 'I' ? 0 : 7),
-                            }}
-                          />
-                        );
-                      })
-                    )}
-                  </div>
-                </CardContent>
-              </Card>
+              {gameMode !== 'INVADER' && (
+                <Card className="bg-[#050a24]/60 border-white/10 backdrop-blur-md">
+                  <CardHeader className="p-1 sm:p-2">
+                    <CardTitle className="text-[10px] uppercase tracking-wide text-white/40 font-mono text-center">Next</CardTitle>
+                  </CardHeader>
+                  <CardContent className="flex items-center justify-center h-20 p-0 pb-1">
+                    <div className="relative" style={{ width: 60, height: 60 }}>
+                      {nextPiece.shape.map((row, y) => 
+                        row.map((value, x) => {
+                          if (value === 0) return null;
+                          return (
+                            <div 
+                              key={`next-${y}-${x}`}
+                              className={`absolute border rounded-none ${nextPiece.color}`}
+                              style={{ 
+                                width: 15,
+                                height: 15,
+                                top: y * 16 + (nextPiece.type === 'I' ? 10 : 15), 
+                                left: x * 16 + (nextPiece.type === 'I' ? 0 : 7),
+                              }}
+                            />
+                          );
+                        })
+                      )}
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
 
               {/* Stats Card */}
               <Card className="bg-[#050a24]/60 border-white/10 backdrop-blur-md overflow-hidden flex-1 max-h-[240px]">
@@ -1207,7 +1540,7 @@ export default function Tetris() {
                       <span className="font-bold text-white leading-none">{level}</span>
                     </div>
                     <div className="flex justify-between items-center text-[9px] font-mono">
-                      <span className="uppercase text-white/30">Blocks Linked</span>
+                      <span className="uppercase text-white/30">{gameMode === 'INVADER' ? 'Neural Hits' : 'Blocks Linked'}</span>
                       <span className="font-bold text-white leading-none">{rows}</span>
                     </div>
                   </div>
