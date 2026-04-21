@@ -74,13 +74,13 @@ export default function Tetris() {
   // Dynamic cell size based on viewport height
   const getDynamicCellSize = () => {
     if (typeof window === 'undefined') return 30;
-    const padding = window.innerWidth < 640 ? 80 : 180; // Increased padding to force a smaller board
+    // Increased padding to account for bottom controls (approx 160px for controls)
+    const padding = window.innerWidth < 640 ? 220 : 200; 
     const sizeByHeight = Math.floor((window.innerHeight - padding) / ROWS);
     const sidebarWidth = window.innerWidth < 640 ? 95 : 170; 
     const horizontalMargin = window.innerWidth < 640 ? 30 : 80; 
     const sizeByWidth = Math.floor((window.innerWidth - sidebarWidth - horizontalMargin) / COLS);
-    // Reduced max size from 26/32 to 22/28 for a more compact feel
-    return Math.max(15, Math.min(sizeByHeight, sizeByWidth, window.innerWidth < 640 ? 22 : 28)); 
+    return Math.max(15, Math.min(sizeByHeight, sizeByWidth, window.innerWidth < 640 ? 20 : 28)); 
   };
 
   const [cellSize, setCellSize] = useState(getDynamicCellSize());
@@ -329,6 +329,18 @@ export default function Tetris() {
     }]);
   };
 
+  const generateInvaderRow = () => {
+    const gapIndex = Math.floor(Math.random() * COLS);
+    return Array(COLS).fill(0).map((_, i) => {
+      if (i === gapIndex) return 0;
+      const roll = Math.random();
+      if (roll > 0.98) return 'CHEST';
+      if (roll > 0.93) return 'BOMB';
+      if (roll > 0.88) return 'LOCK';
+      return (['I', 'J', 'L', 'O', 'S', 'T', 'Z'][Math.floor(Math.random() * 7)] as TetrominoType);
+    }) as (TetrominoType | 0)[];
+  };
+
   const handleInvaderTick = () => {
     if (gameOver || paused || gameState !== 'PLAYING') return;
 
@@ -346,16 +358,7 @@ export default function Tetris() {
       newGrid.pop();
       
       // Generate row with exactly one random gap
-      const gapIndex = Math.floor(Math.random() * COLS);
-      const newRow = Array(COLS).fill(0).map((_, i) => {
-        if (i === gapIndex) return 0;
-        
-        const roll = Math.random();
-        if (roll > 0.98) return 'CHEST';
-        if (roll > 0.93) return 'BOMB';
-        if (roll > 0.88) return 'LOCK';
-        return (['I', 'J', 'L', 'O', 'S', 'T', 'Z'][Math.floor(Math.random() * 7)] as TetrominoType);
-      });
+      const newRow = generateInvaderRow();
       
       newGrid.unshift(newRow);
       return newGrid;
@@ -369,7 +372,8 @@ export default function Tetris() {
       if (y < ROWS - 3 && row.every(cell => cell !== 0)) {
         linesCleared++;
         createExplosion(y, row);
-        acc.unshift(Array(COLS).fill(0));
+        // CRITICAL: Push a new invader row to the top instead of a blank row to prevent "empty row" gaps
+        acc.unshift(generateInvaderRow());
         return acc;
       }
       acc.push(row);
@@ -393,23 +397,23 @@ export default function Tetris() {
 
     const update = (currentTime: number) => {
       const deltaTime = currentTime - lastTime;
-      // Fixed speed: 12 cells per second. deltaTime is in ms. 
-      // Speed in cells per ms: 12 / 1000 = 0.012
-      const step = 0.012 * deltaTime;
+      // Cap delta time to avoid physics tunneling if there's a long hang
+      const dt = Math.min(deltaTime, 33);
+      lastTime = currentTime;
+
+      // Speed: ~11 cells per second
+      const step = 0.011 * dt;
       
-      if (deltaTime >= 16) { // Update approx 60 times a second
-        lastTime = currentTime;
+      setBullets(prev => {
+        if (prev.length === 0) return prev;
+        
+        const nextBullets: typeof prev = [];
+        const currentGrid = gridRef.current;
 
-        setBullets(prev => {
-          if (prev.length === 0) return prev;
-          
-          const nextBullets: typeof prev = [];
-          const currentGrid = gridRef.current;
-
-          prev.forEach(bullet => {
-            const nextY = bullet.y - step; 
-            const gy = Math.floor(nextY);
-            const gx = Math.floor(bullet.x);
+        prev.forEach(bullet => {
+          const nextY = bullet.y - step; 
+          const gy = Math.floor(nextY);
+          const gx = Math.floor(bullet.x);
 
             // Raycast/Step collision: check if it hit a block or reached top
             let hit = false;
@@ -449,7 +453,6 @@ export default function Tetris() {
 
           return nextBullets;
         });
-      }
       frameId = requestAnimationFrame(update);
     };
 
@@ -607,25 +610,13 @@ export default function Tetris() {
     if (mode === 'INVADER') {
       // Fill the first 6 rows with exactly one random gap per row
       for (let y = 0; y < 6; y++) {
-        const gapIndex = Math.floor(Math.random() * COLS);
-        for (let x = 0; x < COLS; x++) {
-          if (x === gapIndex) {
-            initialGrid[y][x] = 0;
-          } else {
-            const types: TetrominoType[] = ['I', 'J', 'L', 'O', 'S', 'T', 'Z', 'BOMB', 'CHEST', 'LOCK'];
-            const roll = Math.random();
-            let type: TetrominoType;
-            if (roll > 0.98) type = 'CHEST';
-            else if (roll > 0.93) type = 'BOMB';
-            else if (roll > 0.88) type = 'LOCK';
-            else type = types[Math.floor(Math.random() * 7)];
-            
-            initialGrid[y][x] = type;
-            if (type === 'LOCK') {
-              setLockHealth(prev => ({ ...prev, [`${y}-${x}`]: 3 }));
-            }
+        initialGrid[y] = generateInvaderRow();
+        // Initialize lock health for initial rows
+        initialGrid[y].forEach((type, x) => {
+          if (type === 'LOCK') {
+            setLockHealth(prev => ({ ...prev, [`${y}-${x}`]: 3 }));
           }
-        }
+        });
       }
     }
     
@@ -1058,7 +1049,7 @@ export default function Tetris() {
             initial={{ opacity: 0, scale: 0.9 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, y: -20, filter: 'blur(10px)' }}
-            className="flex flex-col items-center justify-center z-10 text-center"
+            className="flex flex-col items-center justify-center z-10 text-center -translate-y-12"
           >
             <div className="relative mb-12">
               <motion.div 
@@ -1137,7 +1128,7 @@ export default function Tetris() {
             key="game"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="flex flex-row gap-3 sm:gap-6 items-center justify-center w-full max-w-5xl relative px-4"
+            className="flex flex-row gap-3 sm:gap-6 items-center justify-center w-full max-w-5xl relative px-4 -translate-y-6"
           >
             {/* Horizontal Decorative Bars for Game View */}
             <div className="absolute top-[-40px] inset-x-0 flex items-center justify-center pointer-events-none">
@@ -1482,6 +1473,74 @@ export default function Tetris() {
                     )}
                   </AnimatePresence>
                 </div>
+              </div>
+
+              {/* On-Screen Controls */}
+              <div className="mt-14 flex flex-col items-center gap-4 w-full select-none">
+                {gameMode === 'INVADER' ? (
+                  <div className="flex items-center gap-10">
+                    <div className="flex gap-6">
+                      <Button 
+                        onPointerDown={(e) => { e.preventDefault(); setTurretX(prev => Math.max(-1, prev - 1)); sounds.playMove(); }}
+                        className="w-16 h-16 rounded-full bg-cyan-500/10 border-2 border-cyan-400/30 text-cyan-400 active:scale-90 active:bg-cyan-500/40 shadow-[0_0_15px_rgba(34,211,238,0.2)] transition-all touch-none"
+                      >
+                        <ArrowLeft className="h-10 w-10" />
+                      </Button>
+                      <Button 
+                        onPointerDown={(e) => { e.preventDefault(); setTurretX(prev => Math.min(COLS - 2, prev + 1)); sounds.playMove(); }}
+                        className="w-16 h-16 rounded-full bg-cyan-500/10 border-2 border-cyan-400/30 text-cyan-400 active:scale-90 active:bg-cyan-500/40 shadow-[0_0_15px_rgba(34,211,238,0.2)] transition-all touch-none"
+                      >
+                        <ArrowRight className="h-10 w-10" />
+                      </Button>
+                    </div>
+                    <Button 
+                      onPointerDown={(e) => { e.preventDefault(); fireBullet(); }}
+                      className="w-24 h-24 rounded-full bg-red-500/10 border-4 border-red-500/40 text-red-500 active:scale-95 active:bg-red-500/30 shadow-[0_0_20px_rgba(239,68,68,0.4)] transition-all flex flex-col items-center justify-center p-0 touch-none"
+                    >
+                      <div className="w-8 h-8 border-2 border-current mb-0.5" />
+                      <span className="text-xs font-black italic">FIRE</span>
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-8">
+                    <div className="grid grid-cols-3 gap-3">
+                      <div />
+                      <Button 
+                        onPointerDown={(e) => { e.preventDefault(); handleRotate(); }}
+                        className="w-16 h-16 rounded-2xl bg-purple-500/10 border-2 border-purple-400/30 text-purple-400 active:scale-90 shadow-[0_0_10px_rgba(168,85,247,0.2)] transition-all touch-none"
+                      >
+                        <ArrowUp className="h-10 w-10 text-white" />
+                      </Button>
+                      <div />
+                      <Button 
+                        onPointerDown={(e) => { e.preventDefault(); movePiece({ x: -1, y: 0 }); }}
+                        className="w-16 h-16 rounded-2xl bg-cyan-500/10 border-2 border-cyan-400/30 text-cyan-400 active:scale-90 shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all touch-none"
+                      >
+                        <ArrowLeft className="h-10 w-10" />
+                      </Button>
+                      <Button 
+                        onPointerDown={(e) => { e.preventDefault(); drop(true); }}
+                        className="w-16 h-16 rounded-2xl bg-cyan-500/10 border-2 border-cyan-400/30 text-cyan-400 active:scale-90 shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all touch-none"
+                      >
+                        <ArrowDown className="h-10 w-10" />
+                      </Button>
+                      <Button 
+                        onPointerDown={(e) => { e.preventDefault(); movePiece({ x: 1, y: 0 }); }}
+                        className="w-16 h-16 rounded-2xl bg-cyan-500/10 border-2 border-cyan-400/30 text-cyan-400 active:scale-90 shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all touch-none"
+                      >
+                        <ArrowRight className="h-10 w-10" />
+                      </Button>
+                    </div>
+                    
+                    <Button 
+                      onPointerDown={(e) => { e.preventDefault(); hardDrop(); }}
+                      className="w-20 h-20 rounded-full bg-yellow-500/10 border-4 border-yellow-500/30 text-yellow-500 active:scale-95 shadow-[0_0_20px_rgba(234,179,8,0.2)] transition-all flex flex-col items-center justify-center gap-1 touch-none"
+                    >
+                      <ArrowDown className="h-8 w-8 stroke-[3]" />
+                      <span className="text-[10px] font-black uppercase font-mono">Hard</span>
+                    </Button>
+                  </div>
+                )}
               </div>
             </div>
 
