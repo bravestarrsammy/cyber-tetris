@@ -74,13 +74,12 @@ export default function Tetris() {
   // Dynamic cell size based on viewport height
   const getDynamicCellSize = () => {
     if (typeof window === 'undefined') return 30;
-    // Increased padding to account for bottom controls (approx 160px for controls)
-    const padding = window.innerWidth < 640 ? 220 : 200; 
+    const padding = window.innerWidth < 640 ? 120 : 160; 
     const sizeByHeight = Math.floor((window.innerHeight - padding) / ROWS);
     const sidebarWidth = window.innerWidth < 640 ? 95 : 170; 
     const horizontalMargin = window.innerWidth < 640 ? 30 : 80; 
     const sizeByWidth = Math.floor((window.innerWidth - sidebarWidth - horizontalMargin) / COLS);
-    return Math.max(15, Math.min(sizeByHeight, sizeByWidth, window.innerWidth < 640 ? 20 : 28)); 
+    return Math.max(15, Math.min(sizeByHeight, sizeByWidth, window.innerWidth < 640 ? 22 : 30)); 
   };
 
   const [cellSize, setCellSize] = useState(getDynamicCellSize());
@@ -1128,7 +1127,7 @@ export default function Tetris() {
             key="game"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="flex flex-row gap-3 sm:gap-6 items-center justify-center w-full max-w-5xl relative px-4 -translate-y-6"
+            className="flex flex-row gap-3 sm:gap-6 items-start justify-center w-full max-w-5xl relative px-4 -translate-y-6"
           >
             {/* Horizontal Decorative Bars for Game View */}
             <div className="absolute top-[-40px] inset-x-0 flex items-center justify-center pointer-events-none">
@@ -1474,78 +1473,10 @@ export default function Tetris() {
                   </AnimatePresence>
                 </div>
               </div>
-
-              {/* On-Screen Controls */}
-              <div className="mt-14 flex flex-col items-center gap-4 w-full select-none">
-                {gameMode === 'INVADER' ? (
-                  <div className="flex items-center gap-10">
-                    <div className="flex gap-6">
-                      <Button 
-                        onPointerDown={(e) => { e.preventDefault(); setTurretX(prev => Math.max(-1, prev - 1)); sounds.playMove(); }}
-                        className="w-16 h-16 rounded-full bg-cyan-500/10 border-2 border-cyan-400/30 text-cyan-400 active:scale-90 active:bg-cyan-500/40 shadow-[0_0_15px_rgba(34,211,238,0.2)] transition-all touch-none"
-                      >
-                        <ArrowLeft className="h-10 w-10" />
-                      </Button>
-                      <Button 
-                        onPointerDown={(e) => { e.preventDefault(); setTurretX(prev => Math.min(COLS - 2, prev + 1)); sounds.playMove(); }}
-                        className="w-16 h-16 rounded-full bg-cyan-500/10 border-2 border-cyan-400/30 text-cyan-400 active:scale-90 active:bg-cyan-500/40 shadow-[0_0_15px_rgba(34,211,238,0.2)] transition-all touch-none"
-                      >
-                        <ArrowRight className="h-10 w-10" />
-                      </Button>
-                    </div>
-                    <Button 
-                      onPointerDown={(e) => { e.preventDefault(); fireBullet(); }}
-                      className="w-24 h-24 rounded-full bg-red-500/10 border-4 border-red-500/40 text-red-500 active:scale-95 active:bg-red-500/30 shadow-[0_0_20px_rgba(239,68,68,0.4)] transition-all flex flex-col items-center justify-center p-0 touch-none"
-                    >
-                      <div className="w-8 h-8 border-2 border-current mb-0.5" />
-                      <span className="text-xs font-black italic">FIRE</span>
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-8">
-                    <div className="grid grid-cols-3 gap-3">
-                      <div />
-                      <Button 
-                        onPointerDown={(e) => { e.preventDefault(); handleRotate(); }}
-                        className="w-16 h-16 rounded-2xl bg-purple-500/10 border-2 border-purple-400/30 text-purple-400 active:scale-90 shadow-[0_0_10px_rgba(168,85,247,0.2)] transition-all touch-none"
-                      >
-                        <ArrowUp className="h-10 w-10 text-white" />
-                      </Button>
-                      <div />
-                      <Button 
-                        onPointerDown={(e) => { e.preventDefault(); movePiece({ x: -1, y: 0 }); }}
-                        className="w-16 h-16 rounded-2xl bg-cyan-500/10 border-2 border-cyan-400/30 text-cyan-400 active:scale-90 shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all touch-none"
-                      >
-                        <ArrowLeft className="h-10 w-10" />
-                      </Button>
-                      <Button 
-                        onPointerDown={(e) => { e.preventDefault(); drop(true); }}
-                        className="w-16 h-16 rounded-2xl bg-cyan-500/10 border-2 border-cyan-400/30 text-cyan-400 active:scale-90 shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all touch-none"
-                      >
-                        <ArrowDown className="h-10 w-10" />
-                      </Button>
-                      <Button 
-                        onPointerDown={(e) => { e.preventDefault(); movePiece({ x: 1, y: 0 }); }}
-                        className="w-16 h-16 rounded-2xl bg-cyan-500/10 border-2 border-cyan-400/30 text-cyan-400 active:scale-90 shadow-[0_0_10px_rgba(34,211,238,0.2)] transition-all touch-none"
-                      >
-                        <ArrowRight className="h-10 w-10" />
-                      </Button>
-                    </div>
-                    
-                    <Button 
-                      onPointerDown={(e) => { e.preventDefault(); hardDrop(); }}
-                      className="w-20 h-20 rounded-full bg-yellow-500/10 border-4 border-yellow-500/30 text-yellow-500 active:scale-95 shadow-[0_0_20px_rgba(234,179,8,0.2)] transition-all flex flex-col items-center justify-center gap-1 touch-none"
-                    >
-                      <ArrowDown className="h-8 w-8 stroke-[3]" />
-                      <span className="text-[10px] font-black uppercase font-mono">Hard</span>
-                    </Button>
-                  </div>
-                )}
-              </div>
             </div>
 
             {/* Right: Scoreboard & Next Piece */}
-            <div className="flex flex-col gap-2 w-[95px] sm:w-[170px] pt-1 h-full max-h-[100%]">
+            <div className="flex flex-col gap-2 w-[95px] sm:w-[170px] h-full max-h-[100%]">
               {/* Next Piece Card */}
               {gameMode !== 'INVADER' && (
                 <Card className="bg-[#050a24]/60 border-white/10 backdrop-blur-md">
