@@ -14,7 +14,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Slider } from '@/components/ui/slider';
-import { Trophy, Play, RotateCcw, Pause, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Settings, Volume2, VolumeX, Music, Home, X } from 'lucide-react';
+import { Trophy, Play, RotateCcw, Pause, ArrowDown, ArrowLeft, ArrowRight, ArrowUp, Settings, Volume2, VolumeX, Music, Home, X, ChevronsDown } from 'lucide-react';
 import { sounds } from '@/src/utils/audio';
 
 interface Particle {
@@ -85,6 +85,27 @@ export default function Tetris() {
 
   const [cellSize, setCellSize] = useState(getDynamicCellSize());
   const cellSizeRef = useRef(cellSize);
+  const repeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+
+  const startRepeat = useCallback((action: () => void) => {
+    if (repeatIntervalRef.current) clearInterval(repeatIntervalRef.current);
+    action();
+    repeatIntervalRef.current = setInterval(action, 100);
+  }, []);
+
+  const stopRepeat = useCallback(() => {
+    if (repeatIntervalRef.current) {
+      clearInterval(repeatIntervalRef.current);
+      repeatIntervalRef.current = null;
+    }
+  }, []);
+
+  // Cleanup repeat interval on unmount
+  useEffect(() => {
+    return () => {
+      if (repeatIntervalRef.current) clearInterval(repeatIntervalRef.current);
+    };
+  }, []);
 
   useEffect(() => {
     gridRef.current = grid;
@@ -1163,14 +1184,20 @@ export default function Tetris() {
                        {/* Movement Group - Shifted left */}
                        <div className="flex gap-4 sm:gap-8">
                          <Button 
-                           onPointerDown={(e) => { e.preventDefault(); setTurretX(prev => Math.max(-1, prev - 1)); sounds.playMove(); }}
+                           onPointerDown={(e) => { e.preventDefault(); startRepeat(() => { setTurretX(prev => Math.max(-1, prev - 1)); sounds.playMove(); }); }}
+                           onPointerUp={stopRepeat}
+                           onPointerLeave={stopRepeat}
+                           onPointerCancel={stopRepeat}
                            variant="outline"
                            className="w-14 h-14 sm:w-24 sm:h-24 rounded-none border-cyan-500/30 bg-cyan-500/5 text-cyan-400 hover:bg-cyan-500/10 hover:border-cyan-400 active:scale-90 transition-all touch-none shadow-[inset_0_0_20px_rgba(34,211,238,0.05)]"
                          >
                            <ArrowLeft className="h-9 w-9 sm:h-14 sm:w-14" />
                          </Button>
                          <Button 
-                           onPointerDown={(e) => { e.preventDefault(); setTurretX(prev => Math.min(COLS - 3, prev + 1)); sounds.playMove(); }}
+                           onPointerDown={(e) => { e.preventDefault(); startRepeat(() => { setTurretX(prev => Math.min(COLS - 2, prev + 1)); sounds.playMove(); }); }}
+                           onPointerUp={stopRepeat}
+                           onPointerLeave={stopRepeat}
+                           onPointerCancel={stopRepeat}
                            variant="outline"
                            className="w-14 h-14 sm:w-24 sm:h-24 rounded-none border-cyan-500/30 bg-cyan-500/5 text-cyan-400 hover:bg-cyan-500/10 hover:border-cyan-400 active:scale-90 transition-all touch-none shadow-[inset_0_0_20px_rgba(34,211,238,0.05)]"
                          >
@@ -1180,7 +1207,10 @@ export default function Tetris() {
 
                        {/* Fire Button - Shifted right */}
                        <Button 
-                         onPointerDown={(e) => { e.preventDefault(); fireBullet(); }}
+                         onPointerDown={(e) => { e.preventDefault(); startRepeat(fireBullet); }}
+                         onPointerUp={stopRepeat}
+                         onPointerLeave={stopRepeat}
+                         onPointerCancel={stopRepeat}
                          className="px-10 sm:px-16 h-14 sm:h-24 rounded-none bg-cyan-500/20 border-2 border-cyan-400 text-cyan-400 hover:bg-cyan-400 hover:text-black font-black tracking-[0.4em] text-base sm:text-2xl transition-all active:scale-95 shadow-[0_0_30px_rgba(34,211,238,0.3),inset_0_0_20px_rgba(34,211,238,0.1)] touch-none"
                        >
                          FIRE
@@ -1195,14 +1225,20 @@ export default function Tetris() {
                        {/* Movement Group */}
                        <div className="flex gap-4 sm:gap-6">
                          <Button 
-                           onPointerDown={(e) => { e.preventDefault(); movePiece({ x: -1, y: 0 }); sounds.playMove(); }}
+                           onPointerDown={(e) => { e.preventDefault(); startRepeat(() => { movePiece({ x: -1, y: 0 }); sounds.playMove(); }); }}
+                           onPointerUp={stopRepeat}
+                           onPointerLeave={stopRepeat}
+                           onPointerCancel={stopRepeat}
                            variant="outline"
                            className="w-14 h-14 sm:w-20 sm:h-20 rounded-none border-cyan-500/30 bg-cyan-500/5 text-cyan-400 hover:border-cyan-400 active:scale-90 transition-all touch-none shadow-[inset_0_0_20px_rgba(34,211,238,0.05)]"
                          >
                            <ArrowLeft className="h-8 w-8 sm:h-12 sm:w-12" />
                          </Button>
                          <Button 
-                           onPointerDown={(e) => { e.preventDefault(); movePiece({ x: 1, y: 0 }); sounds.playMove(); }}
+                           onPointerDown={(e) => { e.preventDefault(); startRepeat(() => { movePiece({ x: 1, y: 0 }); sounds.playMove(); }); }}
+                           onPointerUp={stopRepeat}
+                           onPointerLeave={stopRepeat}
+                           onPointerCancel={stopRepeat}
                            variant="outline"
                            className="w-14 h-14 sm:w-20 sm:h-20 rounded-none border-cyan-500/30 bg-cyan-500/5 text-cyan-400 hover:border-cyan-400 active:scale-90 transition-all touch-none shadow-[inset_0_0_20px_rgba(34,211,238,0.05)]"
                          >
@@ -1211,19 +1247,26 @@ export default function Tetris() {
                        </div>
 
                        {/* Action Group */}
-                       <div className="flex gap-3 sm:gap-5">
+                       <div className="flex gap-3 sm:gap-6">
                          <Button 
-                           onPointerDown={(e) => { e.preventDefault(); handleRotate(); sounds.playMove(); }}
+                           onPointerDown={(e) => { e.preventDefault(); startRepeat(() => { handleRotate(); sounds.playMove(); }); }}
+                           onPointerUp={stopRepeat}
+                           onPointerLeave={stopRepeat}
+                           onPointerCancel={stopRepeat}
                            variant="outline"
                            className="w-14 h-14 sm:w-20 sm:h-20 rounded-none border-purple-500/30 bg-purple-500/5 text-purple-400 hover:border-purple-400 active:scale-90 transition-all touch-none shadow-[inset_0_0_20px_rgba(168,85,247,0.05)]"
                          >
                            <RotateCcw className="h-8 w-8 sm:h-12 sm:w-12" />
                          </Button>
                          <Button 
-                           onPointerDown={(e) => { e.preventDefault(); hardDrop(); }}
-                           className="px-6 sm:px-10 h-14 sm:h-20 rounded-none bg-yellow-500/20 border-2 border-yellow-500 text-yellow-500 hover:bg-yellow-500 hover:text-black font-black tracking-[0.1em] text-[10px] sm:text-sm leading-tight transition-all active:scale-95 shadow-[0_0_20px_rgba(234,179,8,0.2)] touch-none"
+                           onPointerDown={(e) => { e.preventDefault(); startRepeat(hardDrop); }}
+                           onPointerUp={stopRepeat}
+                           onPointerLeave={stopRepeat}
+                           onPointerCancel={stopRepeat}
+                           variant="outline"
+                           className="w-14 h-14 sm:w-20 sm:h-20 rounded-none border-yellow-500/30 bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500/20 active:scale-90 transition-all touch-none shadow-[inset_0_0_20px_rgba(234,179,8,0.05)]"
                          >
-                           HARD DROP
+                           <ChevronsDown className="h-8 w-8 sm:h-12 sm:w-12" />
                          </Button>
                        </div>
                      </motion.div>
@@ -1283,24 +1326,26 @@ export default function Tetris() {
                   <div className="absolute inset-0 bg-[linear-gradient(rgba(50,130,184,0.3)_1px,transparent_1px),linear-gradient(90deg,rgba(50,130,184,0.3)_1px,transparent_1px)]" style={{ backgroundSize: `${cellSize}px ${cellSize}px` }} />
 
                   {/* Settled Blocks */}
-                  {grid.map((row, y) => 
-                    row.map((type, x) => {
-                      if (type === 0) return null;
-                      const tetromino = TETROMINOS[type];
-                      return (
-                        <div 
-                          key={`settled-${y}-${x}`}
-                          className={`absolute border-2 rounded-none ${tetromino.color}`}
-                          style={{ 
-                            top: y * cellSize + 1, 
-                            left: x * cellSize + 1, 
-                            width: cellSize - 2, 
-                            height: cellSize - 2
-                          }}
-                        />
-                      );
-                    })
-                  )}
+                  {grid.map((row, y) => (
+                    <React.Fragment key={`row-${y}`}>
+                      {row.map((type, x) => {
+                        if (type === 0) return null;
+                        const tetromino = TETROMINOS[type];
+                        return (
+                          <div 
+                            key={`settled-${y}-${x}`}
+                            className={`absolute border-2 rounded-none ${tetromino.color}`}
+                            style={{ 
+                              top: y * cellSize + 1, 
+                              left: x * cellSize + 1, 
+                              width: cellSize - 2, 
+                              height: cellSize - 2
+                            }}
+                          />
+                        );
+                      })}
+                    </React.Fragment>
+                  ))}
 
                   {/* Time Trial Countdown */}
                   {gameMode === 'TIME_TRIAL' && !gameOver && (
@@ -1325,44 +1370,52 @@ export default function Tetris() {
 
                   {/* Ghost Piece */}
                   {activePiece && ghostPos && !gameOver && !paused && gameMode !== 'INVADER' && (
-                    activePiece.tetromino.shape.map((row, y) => 
-                      row.map((value, x) => {
-                        if (value === 0) return null;
-                        const borderColorClass = activePiece.tetromino.color.split(' ')[0]; // first class is border-...
-                        return (
-                          <div 
-                            key={`ghost-${y}-${x}`}
-                            className={`absolute border-2 border-dashed ${borderColorClass} opacity-40 rounded-none bg-white/5 shadow-[inset_0_0_4px_rgba(255,255,255,0.1)]`}
-                            style={{ 
-                              top: (y + ghostPos.y) * cellSize + 1, 
-                              left: (x + ghostPos.x) * cellSize + 1,
-                              width: cellSize - 2, height: cellSize - 2
-                            }}
-                          />
-                        );
-                      })
-                    )
+                    <React.Fragment key="ghost-container">
+                      {activePiece.tetromino.shape.map((row, y) => (
+                        <React.Fragment key={`ghost-row-${y}`}>
+                          {row.map((value, x) => {
+                            if (value === 0) return null;
+                            const borderColorClass = activePiece.tetromino.color.split(' ')[0]; // first class is border-...
+                            return (
+                              <div 
+                                key={`ghost-cell-${y}-${x}`}
+                                className={`absolute border-2 border-dashed ${borderColorClass} opacity-40 rounded-none bg-white/5 shadow-[inset_0_0_4px_rgba(255,255,255,0.1)]`}
+                                style={{ 
+                                  top: (y + ghostPos.y) * cellSize + 1, 
+                                  left: (x + ghostPos.x) * cellSize + 1,
+                                  width: cellSize - 2, height: cellSize - 2
+                                }}
+                              />
+                            );
+                          })}
+                        </React.Fragment>
+                      ))}
+                    </React.Fragment>
                   )}
 
                   {/* Active Piece */}
                   {activePiece && !gameOver && !paused && gameMode !== 'INVADER' && (
-                    activePiece.tetromino.shape.map((row, y) => 
-                      row.map((value, x) => {
-                        if (value === 0) return null;
-                        return (
-                          <motion.div 
-                            key={`active-${y}-${x}`}
-                            className={`absolute border-2 rounded-none ${activePiece.tetromino.color}`}
-                            style={{ 
-                              top: (y + activePiece.pos.y) * cellSize + 1, 
-                              left: (x + activePiece.pos.x) * cellSize + 1,
-                              width: cellSize - 2, 
-                              height: cellSize - 2,
-                            }}
-                          />
-                        );
-                      })
-                    )
+                    <React.Fragment key="active-container">
+                      {activePiece.tetromino.shape.map((row, y) => (
+                        <React.Fragment key={`active-row-${y}`}>
+                          {row.map((value, x) => {
+                            if (value === 0) return null;
+                            return (
+                              <motion.div 
+                                key={`active-cell-${activePiece.pos.x}-${activePiece.pos.y}-${y}-${x}`}
+                                className={`absolute border-2 rounded-none ${activePiece.tetromino.color}`}
+                                style={{ 
+                                  top: (y + activePiece.pos.y) * cellSize + 1, 
+                                  left: (x + activePiece.pos.x) * cellSize + 1,
+                                  width: cellSize - 2, 
+                                  height: cellSize - 2,
+                                }}
+                              />
+                            );
+                          })}
+                        </React.Fragment>
+                      ))}
+                    </React.Fragment>
                   )}
 
                   {/* Invader Mode: Turret & Bullets */}
@@ -1371,7 +1424,7 @@ export default function Tetris() {
                       {/* Bullets */}
                       {bullets.map(bullet => (
                         <motion.div 
-                          key={bullet.id}
+                          key={`bullet-${bullet.id}`}
                           className={`absolute ${TETROMINOS[bullet.type].color} border shadow-[0_0_10px_rgba(255,255,255,0.5)]`}
                           style={{
                             left: bullet.x * cellSize + 1,
@@ -1413,7 +1466,7 @@ export default function Tetris() {
                   {/* Particles */}
                   {particles.map(p => (
                     <div 
-                      key={p.id}
+                      key={`particle-${p.id}`}
                       className={`absolute w-2 h-2 rounded-full ${p.color} shadow-[0_0_8px_currentColor]`}
                       style={{ 
                         left: p.x, 
@@ -1573,23 +1626,25 @@ export default function Tetris() {
                   </CardHeader>
                   <CardContent className="flex items-center justify-center h-20 p-0 pb-1">
                     <div className="relative" style={{ width: 60, height: 60 }}>
-                      {nextPiece.shape.map((row, y) => 
-                        row.map((value, x) => {
-                          if (value === 0) return null;
-                          return (
-                            <div 
-                              key={`next-${y}-${x}`}
-                              className={`absolute border rounded-none ${nextPiece.color}`}
-                              style={{ 
-                                width: 15,
-                                height: 15,
-                                top: y * 16 + (nextPiece.type === 'I' ? 10 : 15), 
-                                left: x * 16 + (nextPiece.type === 'I' ? 0 : 7),
-                              }}
-                            />
-                          );
-                        })
-                      )}
+                      {nextPiece.shape.map((row, y) => (
+                        <React.Fragment key={`next-row-${y}`}>
+                          {row.map((value, x) => {
+                            if (value === 0) return null;
+                            return (
+                              <div 
+                                key={`next-cell-${y}-${x}`}
+                                className={`absolute border rounded-none ${nextPiece.color}`}
+                                style={{ 
+                                  width: 15,
+                                  height: 15,
+                                  top: y * 16 + (nextPiece.type === 'I' ? 10 : 15), 
+                                  left: x * 16 + (nextPiece.type === 'I' ? 0 : 7),
+                                }}
+                              />
+                            );
+                          })}
+                        </React.Fragment>
+                      ))}
                     </div>
                   </CardContent>
                 </Card>
