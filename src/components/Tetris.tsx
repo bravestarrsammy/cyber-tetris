@@ -343,48 +343,53 @@ export default function Tetris() {
   const handleInvaderTick = () => {
     if (gameOver || paused || gameState !== 'PLAYING') return;
 
-    // Descent logic
     setGrid(prev => {
-      // Check for lose condition before moving
-      if (prev[ROWS - 3].some(cell => cell !== 0)) {
+      const invaderZone = prev.slice(0, ROWS - 3);
+      const turretZone = prev.slice(ROWS - 3);
+      
+      // Check for lose condition: if the last row of the invader zone has blocks
+      if (invaderZone[invaderZone.length - 1].some(cell => cell !== 0)) {
         setGameOver(true);
         setDropTime(null);
         sounds.playGameOver();
         return prev;
       }
 
-      const newGrid = [...prev.map(r => [...r])];
-      newGrid.pop();
+      const nextInvaderZone = [...invaderZone.map(r => [...r])];
+      nextInvaderZone.pop();
+      nextInvaderZone.unshift(generateInvaderRow());
       
-      // Generate row with exactly one random gap
-      const newRow = generateInvaderRow();
-      
-      newGrid.unshift(newRow);
-      return newGrid;
+      return [...nextInvaderZone, ...turretZone];
     });
   };
 
   const handleInvaderLanding = (newGrid: (TetrominoType | 0)[][]) => {
     let linesCleared = 0;
-    const finalGrid = newGrid.reduce((acc, row, y) => {
-      // Lines are cleared only if y < ROWS - 3 (to avoid turret area clearing if logic somehow overlaps)
-      if (y < ROWS - 3 && row.every(cell => cell !== 0)) {
+    const invaderZone = newGrid.slice(0, ROWS - 3);
+    const turretZone = newGrid.slice(ROWS - 3);
+
+    const filteredInvaderZone = invaderZone.filter((row, y) => {
+      const isFull = row.every(cell => cell !== 0);
+      if (isFull) {
         linesCleared++;
         createExplosion(y, row);
-        // CRITICAL: Push a new invader row to the top instead of a blank row to prevent "empty row" gaps
-        acc.unshift(generateInvaderRow());
-        return acc;
       }
-      acc.push(row);
-      return acc;
-    }, [] as (TetrominoType | 0)[][]);
+      return !isFull;
+    });
 
     if (linesCleared > 0) {
+      // Consistently push back (recede) in Invader Mode:
+      // Remove cleared lines and add blanks at the BOTTOM of the zone.
+      const blankRows = Array.from({ length: linesCleared }, () => Array(COLS).fill(0));
+      const nextInvaderZone = [...filteredInvaderZone, ...blankRows];
+      
+      setGrid([...nextInvaderZone, ...turretZone]);
       setRows(prev => prev + linesCleared);
       setScore(prev => prev + [0, 40, 100, 300, 1200][linesCleared] * level);
       sounds.playClear();
+    } else {
+      setGrid(newGrid);
     }
-    setGrid(finalGrid);
   };
 
   // Bullet movement and collision handling
@@ -416,8 +421,7 @@ export default function Tetris() {
 
             // Raycast/Step collision: check if it hit a block or reached top
             let hit = false;
-            // Precise collision check
-            const checkY = Math.ceil(nextY); // The cell we are entering bottom-up
+            const checkY = Math.floor(nextY); 
             
             if (nextY < 0) {
               hit = true;
@@ -431,10 +435,13 @@ export default function Tetris() {
               });
             } else if (checkY >= 0 && checkY < ROWS && currentGrid[checkY][gx] !== 0) {
               hit = true;
-              const targetY = checkY + 1; // Settle below the hit block
-              if (targetY < ROWS - 2) { // Avoid turret collision
+              const targetY = checkY + 1; // Settle in the empty cell just below the hit block (y increases downward)
+              
+              // Only settle if it's within the invader zone (0 to ROWS-4)
+              if (targetY < ROWS - 3) { 
                 setGrid(currentBoard => {
                   const newGrid = currentBoard.map(r => [...r]);
+                  // Only place if the target cell is actually empty
                   if (newGrid[targetY][gx] === 0) {
                     newGrid[targetY][gx] = bullet.type;
                     setTimeout(() => handleInvaderLanding(newGrid), 0);
@@ -1136,12 +1143,51 @@ export default function Tetris() {
               <div className="w-16 h-[1px] bg-gradient-to-l from-transparent via-cyan-400/40 to-transparent" />
             </div>
 
-            <div className="absolute bottom-[-40px] inset-x-0 flex items-center justify-center pointer-events-none">
-               <div className="flex gap-2 items-center">
+            {/* Decorative Panel / Control Panel */}
+            <div className={`absolute bottom-[-110px] sm:bottom-[-130px] inset-x-0 flex flex-col items-center justify-center ${gameMode !== 'INVADER' ? 'pointer-events-none' : ''}`}>
+               <div className="flex gap-2 items-center mb-4">
                   <div className="text-[8px] font-mono tracking-[0.3em] text-white/10 uppercase">Security_Protocol_Active</div>
                   <div className="w-1 h-1 rounded-full bg-cyan-500/40 animate-pulse" />
                   <div className="w-48 h-[1px] bg-white/5" />
                </div>
+
+               {gameMode === 'INVADER' && !gameOver && !paused && (
+                 <motion.div 
+                   initial={{ opacity: 0, y: 10 }}
+                   animate={{ opacity: 1, y: 0 }}
+                   className="flex items-center gap-4 sm:gap-8 px-8 py-4 bg-black/40 border border-white/5 backdrop-blur-sm relative"
+                 >
+                   {/* Corner Accents for the control box */}
+                   <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-cyan-500/40" />
+                   <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-cyan-500/40" />
+                   <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-cyan-500/40" />
+                   <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-cyan-500/40" />
+
+                   <div className="flex gap-3">
+                     <Button 
+                       onClick={() => setTurretX(prev => Math.max(-1, prev - 1))}
+                       variant="outline"
+                       className="w-12 h-12 sm:w-16 sm:h-16 rounded-none border-cyan-500/30 bg-transparent text-cyan-400 hover:bg-cyan-500/10 hover:border-cyan-400 active:scale-90 transition-transform"
+                     >
+                       <ArrowLeft className="h-6 w-6 sm:h-8 sm:w-8" />
+                     </Button>
+                     <Button 
+                       onClick={() => setTurretX(prev => Math.min(COLS - 3, prev + 1))}
+                       variant="outline"
+                       className="w-12 h-12 sm:w-16 sm:h-16 rounded-none border-cyan-500/30 bg-transparent text-cyan-400 hover:bg-cyan-500/10 hover:border-cyan-400 active:scale-90 transition-transform"
+                     >
+                       <ArrowRight className="h-6 w-6 sm:h-8 sm:w-8" />
+                     </Button>
+                   </div>
+
+                   <Button 
+                     onClick={fireBullet}
+                     className="px-8 sm:px-12 h-12 sm:h-16 rounded-none bg-cyan-500/20 border-2 border-cyan-400 text-cyan-400 hover:bg-cyan-400 hover:text-black font-black tracking-[0.2em] transition-all active:scale-95 shadow-[0_0_20px_rgba(34,211,238,0.2)]"
+                   >
+                     FIRE
+                   </Button>
+                 </motion.div>
+               )}
             </div>
 
             {/* Left Decor: Vertical Scanning Line */}
