@@ -74,12 +74,13 @@ export default function Tetris() {
   // Dynamic cell size based on viewport height
   const getDynamicCellSize = () => {
     if (typeof window === 'undefined') return 30;
-    const padding = window.innerWidth < 640 ? 120 : 160; 
+    // Increased padding to account for the large neural control panel (approx 180-220px)
+    const padding = window.innerWidth < 640 ? 260 : 300; 
     const sizeByHeight = Math.floor((window.innerHeight - padding) / ROWS);
     const sidebarWidth = window.innerWidth < 640 ? 95 : 170; 
     const horizontalMargin = window.innerWidth < 640 ? 30 : 80; 
     const sizeByWidth = Math.floor((window.innerWidth - sidebarWidth - horizontalMargin) / COLS);
-    return Math.max(15, Math.min(sizeByHeight, sizeByWidth, window.innerWidth < 640 ? 22 : 30)); 
+    return Math.max(15, Math.min(sizeByHeight, sizeByWidth, window.innerWidth < 640 ? 22 : 28)); 
   };
 
   const [cellSize, setCellSize] = useState(getDynamicCellSize());
@@ -1134,7 +1135,7 @@ export default function Tetris() {
             key="game"
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            className="flex flex-row gap-3 sm:gap-6 items-start justify-center w-full max-w-5xl relative px-4 -translate-y-6"
+            className="flex flex-row gap-3 sm:gap-6 items-start justify-center w-full max-w-5xl relative px-4 -translate-y-12 sm:-translate-y-16"
           >
             {/* Horizontal Decorative Bars for Game View */}
             <div className="absolute top-[-40px] inset-x-0 flex items-center justify-center pointer-events-none">
@@ -1144,49 +1145,90 @@ export default function Tetris() {
             </div>
 
             {/* Decorative Panel / Control Panel */}
-            <div className={`absolute bottom-[-110px] sm:bottom-[-130px] inset-x-0 flex flex-col items-center justify-center ${gameMode !== 'INVADER' ? 'pointer-events-none' : ''}`}>
-               <div className="flex gap-2 items-center mb-4">
-                  <div className="text-[8px] font-mono tracking-[0.3em] text-white/10 uppercase">Security_Protocol_Active</div>
+            <div className="absolute bottom-[-135px] sm:bottom-[-150px] inset-x-0">
+               <div className="flex gap-2 items-center mb-5 px-6 sm:px-10">
+                  <div className="text-[8px] font-mono tracking-[0.3em] text-white/20 uppercase">Security_Protocol_Active</div>
                   <div className="w-1 h-1 rounded-full bg-cyan-500/40 animate-pulse" />
-                  <div className="w-48 h-[1px] bg-white/5" />
+                  <div className="w-full h-[1px] bg-white/5" />
                </div>
 
-               {gameMode === 'INVADER' && !gameOver && !paused && (
-                 <motion.div 
-                   initial={{ opacity: 0, y: 10 }}
-                   animate={{ opacity: 1, y: 0 }}
-                   className="flex items-center gap-4 sm:gap-8 px-8 py-4 bg-black/40 border border-white/5 backdrop-blur-sm relative"
-                 >
-                   {/* Corner Accents for the control box */}
-                   <div className="absolute top-0 left-0 w-2 h-2 border-t border-l border-cyan-500/40" />
-                   <div className="absolute top-0 right-0 w-2 h-2 border-t border-r border-cyan-500/40" />
-                   <div className="absolute bottom-0 left-0 w-2 h-2 border-b border-l border-cyan-500/40" />
-                   <div className="absolute bottom-0 right-0 w-2 h-2 border-b border-r border-cyan-500/40" />
-
-                   <div className="flex gap-3">
-                     <Button 
-                       onClick={() => setTurretX(prev => Math.max(-1, prev - 1))}
-                       variant="outline"
-                       className="w-12 h-12 sm:w-16 sm:h-16 rounded-none border-cyan-500/30 bg-transparent text-cyan-400 hover:bg-cyan-500/10 hover:border-cyan-400 active:scale-90 transition-transform"
+               {!gameOver && !paused && (
+                 <>
+                   {gameMode === 'INVADER' ? (
+                     <motion.div 
+                       initial={{ opacity: 0, y: 20 }}
+                       animate={{ opacity: 1, y: 0 }}
+                       className="flex items-center justify-between w-full px-6 sm:px-[60px] md:px-[100px] pointer-events-auto"
                      >
-                       <ArrowLeft className="h-6 w-6 sm:h-8 sm:w-8" />
-                     </Button>
-                     <Button 
-                       onClick={() => setTurretX(prev => Math.min(COLS - 3, prev + 1))}
-                       variant="outline"
-                       className="w-12 h-12 sm:w-16 sm:h-16 rounded-none border-cyan-500/30 bg-transparent text-cyan-400 hover:bg-cyan-500/10 hover:border-cyan-400 active:scale-90 transition-transform"
-                     >
-                       <ArrowRight className="h-6 w-6 sm:h-8 sm:w-8" />
-                     </Button>
-                   </div>
+                       {/* Movement Group - Shifted left */}
+                       <div className="flex gap-4 sm:gap-8">
+                         <Button 
+                           onPointerDown={(e) => { e.preventDefault(); setTurretX(prev => Math.max(-1, prev - 1)); sounds.playMove(); }}
+                           variant="outline"
+                           className="w-14 h-14 sm:w-24 sm:h-24 rounded-none border-cyan-500/30 bg-cyan-500/5 text-cyan-400 hover:bg-cyan-500/10 hover:border-cyan-400 active:scale-90 transition-all touch-none shadow-[inset_0_0_20px_rgba(34,211,238,0.05)]"
+                         >
+                           <ArrowLeft className="h-9 w-9 sm:h-14 sm:w-14" />
+                         </Button>
+                         <Button 
+                           onPointerDown={(e) => { e.preventDefault(); setTurretX(prev => Math.min(COLS - 3, prev + 1)); sounds.playMove(); }}
+                           variant="outline"
+                           className="w-14 h-14 sm:w-24 sm:h-24 rounded-none border-cyan-500/30 bg-cyan-500/5 text-cyan-400 hover:bg-cyan-500/10 hover:border-cyan-400 active:scale-90 transition-all touch-none shadow-[inset_0_0_20px_rgba(34,211,238,0.05)]"
+                         >
+                           <ArrowRight className="h-9 w-9 sm:h-14 sm:w-14" />
+                         </Button>
+                       </div>
 
-                   <Button 
-                     onClick={fireBullet}
-                     className="px-8 sm:px-12 h-12 sm:h-16 rounded-none bg-cyan-500/20 border-2 border-cyan-400 text-cyan-400 hover:bg-cyan-400 hover:text-black font-black tracking-[0.2em] transition-all active:scale-95 shadow-[0_0_20px_rgba(34,211,238,0.2)]"
-                   >
-                     FIRE
-                   </Button>
-                 </motion.div>
+                       {/* Fire Button - Shifted right */}
+                       <Button 
+                         onPointerDown={(e) => { e.preventDefault(); fireBullet(); }}
+                         className="px-10 sm:px-16 h-14 sm:h-24 rounded-none bg-cyan-500/20 border-2 border-cyan-400 text-cyan-400 hover:bg-cyan-400 hover:text-black font-black tracking-[0.4em] text-base sm:text-2xl transition-all active:scale-95 shadow-[0_0_30px_rgba(34,211,238,0.3),inset_0_0_20px_rgba(34,211,238,0.1)] touch-none"
+                       >
+                         FIRE
+                       </Button>
+                     </motion.div>
+                   ) : (
+                     <motion.div 
+                       initial={{ opacity: 0, y: 20 }}
+                       animate={{ opacity: 1, y: 0 }}
+                       className="flex items-center justify-between w-full px-6 sm:px-[60px] md:px-[100px] pointer-events-auto"
+                     >
+                       {/* Movement Group */}
+                       <div className="flex gap-4 sm:gap-6">
+                         <Button 
+                           onPointerDown={(e) => { e.preventDefault(); movePiece({ x: -1, y: 0 }); sounds.playMove(); }}
+                           variant="outline"
+                           className="w-14 h-14 sm:w-20 sm:h-20 rounded-none border-cyan-500/30 bg-cyan-500/5 text-cyan-400 hover:border-cyan-400 active:scale-90 transition-all touch-none shadow-[inset_0_0_20px_rgba(34,211,238,0.05)]"
+                         >
+                           <ArrowLeft className="h-8 w-8 sm:h-12 sm:w-12" />
+                         </Button>
+                         <Button 
+                           onPointerDown={(e) => { e.preventDefault(); movePiece({ x: 1, y: 0 }); sounds.playMove(); }}
+                           variant="outline"
+                           className="w-14 h-14 sm:w-20 sm:h-20 rounded-none border-cyan-500/30 bg-cyan-500/5 text-cyan-400 hover:border-cyan-400 active:scale-90 transition-all touch-none shadow-[inset_0_0_20px_rgba(34,211,238,0.05)]"
+                         >
+                           <ArrowRight className="h-8 w-8 sm:h-12 sm:w-12" />
+                         </Button>
+                       </div>
+
+                       {/* Action Group */}
+                       <div className="flex gap-3 sm:gap-5">
+                         <Button 
+                           onPointerDown={(e) => { e.preventDefault(); handleRotate(); sounds.playMove(); }}
+                           variant="outline"
+                           className="w-14 h-14 sm:w-20 sm:h-20 rounded-none border-purple-500/30 bg-purple-500/5 text-purple-400 hover:border-purple-400 active:scale-90 transition-all touch-none shadow-[inset_0_0_20px_rgba(168,85,247,0.05)]"
+                         >
+                           <RotateCcw className="h-8 w-8 sm:h-12 sm:w-12" />
+                         </Button>
+                         <Button 
+                           onPointerDown={(e) => { e.preventDefault(); hardDrop(); }}
+                           className="px-6 sm:px-10 h-14 sm:h-20 rounded-none bg-yellow-500/20 border-2 border-yellow-500 text-yellow-500 hover:bg-yellow-500 hover:text-black font-black tracking-[0.1em] text-[10px] sm:text-sm leading-tight transition-all active:scale-95 shadow-[0_0_20px_rgba(234,179,8,0.2)] touch-none"
+                         >
+                           HARD DROP
+                         </Button>
+                       </div>
+                     </motion.div>
+                   )}
+                 </>
                )}
             </div>
 
