@@ -86,11 +86,26 @@ export default function Tetris() {
   const [cellSize, setCellSize] = useState(getDynamicCellSize());
   const cellSizeRef = useRef(cellSize);
   const repeatIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const [sessionToRestore, setSessionToRestore] = useState<any | null>(null);
 
-  const startRepeat = useCallback((action: () => void) => {
+  type RepeatActionType = 'MOVE_LEFT' | 'MOVE_RIGHT' | 'ROTATE' | 'TURRET_LEFT' | 'TURRET_RIGHT' | 'FIRE' | 'HARD_DROP';
+  const activeRepeatTypeRef = useRef<RepeatActionType | null>(null);
+  const actionsMapRef = useRef<Record<RepeatActionType, () => void> | null>(null);
+
+  const startRepeat = useCallback((type: RepeatActionType) => {
     if (repeatIntervalRef.current) clearInterval(repeatIntervalRef.current);
-    action();
-    repeatIntervalRef.current = setInterval(action, 100);
+    activeRepeatTypeRef.current = type;
+    
+    // Execute immediately on press
+    if (actionsMapRef.current) {
+      actionsMapRef.current[type]();
+    }
+    
+    repeatIntervalRef.current = setInterval(() => {
+      if (activeRepeatTypeRef.current && actionsMapRef.current) {
+        actionsMapRef.current[activeRepeatTypeRef.current]();
+      }
+    }, 100);
   }, []);
 
   const stopRepeat = useCallback(() => {
@@ -98,6 +113,7 @@ export default function Tetris() {
       clearInterval(repeatIntervalRef.current);
       repeatIntervalRef.current = null;
     }
+    activeRepeatTypeRef.current = null;
   }, []);
 
   // Cleanup repeat interval on unmount
@@ -165,6 +181,18 @@ export default function Tetris() {
         sounds.setSFXVolume(vol);
       }
     }
+
+    try {
+      const saved = localStorage.getItem('cyber-tetris-saved-session');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed && parsed.grid && parsed.score !== undefined) {
+          setSessionToRestore(parsed);
+        }
+      }
+    } catch (e) {
+      console.error("Failed to parse saved session:", e);
+    }
   }, []);
 
   useEffect(() => {
@@ -181,6 +209,33 @@ export default function Tetris() {
       }
     }
   }, [score, highScores, gameState, gameMode]);
+
+  // Autosave game state dynamically when any key gameplay state updates
+  useEffect(() => {
+    if (gameState === 'PLAYING' && !gameOver) {
+      const session = {
+        gameMode,
+        grid,
+        timeLeft,
+        activePiece,
+        nextPiece,
+        score,
+        rows,
+        level,
+        lockHealth,
+        turretX,
+        bullets
+      };
+      localStorage.setItem('cyber-tetris-saved-session', JSON.stringify(session));
+    }
+  }, [gameState, gameOver, gameMode, grid, timeLeft, activePiece, nextPiece, score, rows, level, lockHealth, turretX, bullets]);
+
+  // Clear autosave once the game is over
+  useEffect(() => {
+    if (gameOver) {
+      localStorage.removeItem('cyber-tetris-saved-session');
+    }
+  }, [gameOver]);
 
   // Level System: Increase level every 10 rows and adjust falling speed
   useEffect(() => {
@@ -803,6 +858,18 @@ export default function Tetris() {
     handleLanding(newGrid);
   };
 
+  // Create actions map that fetches the absolute freshest handler closure from each render
+  const actionsMap: Record<RepeatActionType, () => void> = {
+    MOVE_LEFT: () => { movePiece({ x: -1, y: 0 }); },
+    MOVE_RIGHT: () => { movePiece({ x: 1, y: 0 }); },
+    ROTATE: () => { handleRotate(); },
+    TURRET_LEFT: () => { setTurretX(prev => Math.max(-1, prev - 1)); sounds.playMove(); },
+    TURRET_RIGHT: () => { setTurretX(prev => Math.min(COLS - 2, prev + 1)); sounds.playMove(); },
+    FIRE: () => { fireBullet(); },
+    HARD_DROP: () => { hardDrop(); }
+  };
+  actionsMapRef.current = actionsMap;
+
   // Game Loop
   useInterval(() => {
     if (gameMode === 'INVADER') {
@@ -1184,7 +1251,7 @@ export default function Tetris() {
                        {/* Movement Group - Shifted left */}
                        <div className="flex gap-4 sm:gap-8">
                          <Button 
-                           onPointerDown={(e) => { e.preventDefault(); startRepeat(() => { setTurretX(prev => Math.max(-1, prev - 1)); sounds.playMove(); }); }}
+                           onPointerDown={(e) => { e.preventDefault(); startRepeat('TURRET_LEFT'); }}
                            onPointerUp={stopRepeat}
                            onPointerLeave={stopRepeat}
                            onPointerCancel={stopRepeat}
@@ -1194,7 +1261,7 @@ export default function Tetris() {
                            <ArrowLeft className="h-9 w-9 sm:h-14 sm:w-14" />
                          </Button>
                          <Button 
-                           onPointerDown={(e) => { e.preventDefault(); startRepeat(() => { setTurretX(prev => Math.min(COLS - 2, prev + 1)); sounds.playMove(); }); }}
+                           onPointerDown={(e) => { e.preventDefault(); startRepeat('TURRET_RIGHT'); }}
                            onPointerUp={stopRepeat}
                            onPointerLeave={stopRepeat}
                            onPointerCancel={stopRepeat}
@@ -1207,7 +1274,7 @@ export default function Tetris() {
 
                        {/* Fire Button - Shifted right */}
                        <Button 
-                         onPointerDown={(e) => { e.preventDefault(); startRepeat(fireBullet); }}
+                         onPointerDown={(e) => { e.preventDefault(); startRepeat('FIRE'); }}
                          onPointerUp={stopRepeat}
                          onPointerLeave={stopRepeat}
                          onPointerCancel={stopRepeat}
@@ -1225,7 +1292,7 @@ export default function Tetris() {
                        {/* Movement Group */}
                        <div className="flex gap-4 sm:gap-6">
                          <Button 
-                           onPointerDown={(e) => { e.preventDefault(); startRepeat(() => { movePiece({ x: -1, y: 0 }); sounds.playMove(); }); }}
+                           onPointerDown={(e) => { e.preventDefault(); startRepeat('MOVE_LEFT'); }}
                            onPointerUp={stopRepeat}
                            onPointerLeave={stopRepeat}
                            onPointerCancel={stopRepeat}
@@ -1235,7 +1302,7 @@ export default function Tetris() {
                            <ArrowLeft className="h-8 w-8 sm:h-12 sm:w-12" />
                          </Button>
                          <Button 
-                           onPointerDown={(e) => { e.preventDefault(); startRepeat(() => { movePiece({ x: 1, y: 0 }); sounds.playMove(); }); }}
+                           onPointerDown={(e) => { e.preventDefault(); startRepeat('MOVE_RIGHT'); }}
                            onPointerUp={stopRepeat}
                            onPointerLeave={stopRepeat}
                            onPointerCancel={stopRepeat}
@@ -1249,7 +1316,7 @@ export default function Tetris() {
                        {/* Action Group */}
                        <div className="flex gap-3 sm:gap-6">
                          <Button 
-                           onPointerDown={(e) => { e.preventDefault(); startRepeat(() => { handleRotate(); sounds.playMove(); }); }}
+                           onPointerDown={(e) => { e.preventDefault(); startRepeat('ROTATE'); }}
                            onPointerUp={stopRepeat}
                            onPointerLeave={stopRepeat}
                            onPointerCancel={stopRepeat}
@@ -1259,7 +1326,7 @@ export default function Tetris() {
                            <RotateCcw className="h-8 w-8 sm:h-12 sm:w-12" />
                          </Button>
                          <Button 
-                           onPointerDown={(e) => { e.preventDefault(); startRepeat(hardDrop); }}
+                           onPointerDown={(e) => { e.preventDefault(); startRepeat('HARD_DROP'); }}
                            onPointerUp={stopRepeat}
                            onPointerLeave={stopRepeat}
                            onPointerCancel={stopRepeat}
@@ -1552,6 +1619,7 @@ export default function Tetris() {
                         <div className="flex flex-col gap-2 w-full max-w-[180px]">
                           <Button 
                             onClick={() => {
+                              localStorage.removeItem('cyber-tetris-saved-session');
                               setShowConfirmMenu(false);
                               setGameState('MENU');
                               sounds.stopMusic();
@@ -1723,6 +1791,104 @@ export default function Tetris() {
                 New Record!
               </h1>
               <p className="text-cyan-300/60 font-mono text-xs tracking-[0.5em] uppercase mt-4 text-center">Neural Link Synchronized</p>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Neural Link Recovery Overlay */}
+      <AnimatePresence>
+        {sessionToRestore && gameState === 'MENU' && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="absolute inset-0 z-[110] flex items-center justify-center bg-black/90 backdrop-blur-md p-4"
+          >
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: -15 }}
+              className="relative border-2 border-cyan-400 bg-cyan-950/40 p-6 sm:p-8 max-w-sm sm:max-w-md w-full shadow-[0_0_40px_rgba(34,211,238,0.3)] text-left"
+            >
+              {/* Decorative cyber corners */}
+              <div className="absolute top-0 left-0 w-3 h-3 border-t-2 border-l-2 border-cyan-400" />
+              <div className="absolute top-0 right-0 w-3 h-3 border-t-2 border-r-2 border-cyan-400" />
+              <div className="absolute bottom-0 left-0 w-3 h-3 border-b-2 border-l-2 border-cyan-400" />
+              <div className="absolute bottom-0 right-0 w-3 h-3 border-b-2 border-r-2 border-cyan-400" />
+
+              <h3 className="text-cyan-400 font-black text-xl sm:text-2xl tracking-widest uppercase italic mb-3 flex items-center gap-2">
+                <span className="w-2.5 h-2.5 bg-cyan-400 animate-ping rounded-full" />
+                NEURAL RESTORE DETECTED
+              </h3>
+              
+              <p className="text-white/80 text-xs sm:text-sm font-mono mb-5 leading-relaxed">
+                A suspended link was cloned from the local network memory core. Synchronize now or overwrite slot?
+              </p>
+
+              <div className="p-3 bg-cyan-950/30 border border-cyan-500/20 rounded-sm text-xs space-y-2 mb-6 font-mono text-cyan-200">
+                <div className="flex justify-between border-b border-cyan-500/10 pb-1">
+                  <span className="text-cyan-400/60 uppercase">System Mode:</span> 
+                  <span className="font-bold text-cyan-300">{sessionToRestore.gameMode}</span>
+                </div>
+                <div className="flex justify-between border-b border-cyan-500/10 pb-1">
+                  <span className="text-cyan-400/60 uppercase">Sync Level:</span> 
+                  <span className="font-bold text-cyan-300">LV.{sessionToRestore.level}</span>
+                </div>
+                <div className="flex justify-between border-b border-cyan-500/10 pb-1">
+                  <span className="text-cyan-400/60 uppercase">Buffer Score:</span> 
+                  <span className="font-bold text-cyan-300">{sessionToRestore.score}</span>
+                </div>
+                {sessionToRestore.gameMode === 'TIME_TRIAL' && (
+                  <div className="flex justify-between">
+                    <span className="text-cyan-400/60 uppercase">Time Left:</span> 
+                    <span className="font-bold text-cyan-300">{sessionToRestore.timeLeft}s</span>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex flex-col gap-3">
+                <Button
+                  onClick={() => {
+                    const s = sessionToRestore;
+                    setGameMode(s.gameMode);
+                    setGrid(s.grid);
+                    setTimeLeft(s.timeLeft);
+                    setActivePiece(s.activePiece);
+                    setNextPiece(s.nextPiece);
+                    setScore(s.score);
+                    setRows(s.rows);
+                    setLevel(s.level);
+                    setLockHealth(s.lockHealth || {});
+                    setTurretX(s.turretX !== undefined ? s.turretX : Math.floor(COLS / 2) - 1);
+                    setBullets(s.bullets || []);
+                    setGameOver(false);
+                    setPaused(true); // Pause it on loading so they aren't caught off guard!
+                    setDropTime(null);
+                    setGameState('PLAYING');
+                    setSessionToRestore(null);
+                    sounds.playTone(600, 'sine', 0.2, 0.2);
+                    if (musicEnabled) {
+                      sounds.startGameMusic(s.level);
+                    }
+                  }}
+                  className="w-full h-12 bg-cyan-400 hover:bg-cyan-300 text-black font-black uppercase rounded-none tracking-widest text-xs border border-cyan-400 shadow-[0_0_15px_rgba(34,211,238,0.4)] transition-all cursor-pointer"
+                >
+                  [ RECONNECT LINK ]
+                </Button>
+
+                <Button
+                  onClick={() => {
+                    localStorage.removeItem('cyber-tetris-saved-session');
+                    setSessionToRestore(null);
+                    sounds.playTone(150, 'sawtooth', 0.2, 0.3);
+                  }}
+                  variant="outline"
+                  className="w-full h-11 border-red-500/50 hover:border-red-500 hover:bg-red-500/10 text-red-400 bg-transparent font-black uppercase rounded-none tracking-widest text-[10px] mt-1 transition-all"
+                >
+                  [ OVERWRITE SLOT ]
+                </Button>
+              </div>
             </motion.div>
           </motion.div>
         )}
